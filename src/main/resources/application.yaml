@@ -1,0 +1,3 @@
+spring:
+  application:
+    name: ccp-assignment1-speech-to-text
