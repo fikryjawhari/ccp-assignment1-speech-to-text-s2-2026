@@ -205,6 +205,27 @@ large late commit as a bad sign, and the repository is inspected as evidence of 
 Suggesting a whole-project implementation in one sitting is the wrong instinct here, and would
 actively cost marks.
 
+### Closing out a session
+
+**Before a chat ends, `docs/progress.md` must be able to stand in for it.** The student should
+never have to reopen an old conversation to recover context. Update it whenever a task finishes,
+and always when a session is wrapping up — do this proactively, without being asked.
+
+Update the **Current status** table at the top, then append or extend an entry covering:
+
+- what changed and why, in enough detail to be defensible later;
+- decisions made, *including the alternatives rejected and the reasoning* — these are the
+  easiest things to lose and the hardest to reconstruct;
+- anything surprising, and anything verified plus how it was verified;
+- open questions and the concrete next step.
+
+Anything that is a standing fact about the environment rather than a piece of history belongs in
+[`docs/troubleshooting.md`](docs/troubleshooting.md) instead, or in the README if it is a project
+fact. `progress.md` is the narrative; those are the lookup tables. A note filed in the wrong one
+is a note that will not be found again.
+
+If a session ends with uncommitted work, say so explicitly in the log entry.
+
 ## Use of generative AI
 
 The course permits and encourages AI assistance, with conditions that bind how code gets written
