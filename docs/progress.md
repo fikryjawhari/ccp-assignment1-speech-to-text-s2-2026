@@ -23,8 +23,8 @@ Entry format:
 
 | | |
 | --- | --- |
-| **Stage** | 0 — project context (complete) |
-| **Next** | Stage 1 — skeleton: static page + uptime endpoint |
+| **Stage** | 1 — skeleton (configuration done, no code yet) |
+| **Next** | Stage 1 remainder — package structure, `/api/v1/admin/uptime`, placeholder `index.html`, `ErrorResponse` + advice |
 | **Last TITAN check** | none yet |
 
 ---
@@ -64,3 +64,37 @@ Entry format:
 **Next:** Stage 1. Remove the WebFlux starter, enable virtual threads, create the package
 structure, implement `GET /api/v1/admin/uptime` and a placeholder `index.html`, then take the
 first TITAN reading.
+
+## 2026-08-18 — Stage 1 (part 1): configuration
+
+Deliberately limited to changing existing files. No new packages or classes yet — those come
+next, so the skeleton lands as its own reviewable step rather than mixed in with build config.
+
+**Done:**
+
+- Removed `spring-boot-starter-webflux` and `spring-boot-starter-webflux-test` from `pom.xml`,
+  committing to the MVC stack.
+- Enabled `spring.threads.virtual.enabled` in `application.yaml`, with a comment explaining why
+  (Tomcat's 200-thread default vs the assignment's concurrency target).
+
+**TITAN:** not checked — nothing user-visible has changed yet. First reading comes at the end of
+Stage 1.
+
+**Verified locally:** `./mvnw test` passes and `./mvnw package` produces the fat JAR. Inspecting
+`BOOT-INF/lib` in that JAR shows only `tomcat-embed-*`, `spring-boot-webmvc` and `spring-webmvc`
+— no Netty, no reactor-core — so the stack really is servlet-only, not just nominally.
+
+**Learned / decided:**
+
+- Removing the WebFlux starter also removed reactor-core and Netty transitively. Worth knowing:
+  had both starters stayed, Spring Boot would have silently chosen servlet MVC anyway, so the
+  old build was misleading rather than broken.
+- `./mvnw dependency:tree` fails offline — the plugin was never cached. Inspecting the packaged
+  JAR is a workable substitute and arguably better evidence, since it shows what actually ships.
+- The JDK 25 on this machine is JetBrains Runtime at `~/.jdks/jbrsdk_jcef-25.0.4`. `JAVA_HOME`
+  must be set to it before running the wrapper from a shell, since `java` on `PATH` is still 8.
+
+**Next:** Stage 1 remainder — package structure (`web`, `service`, `client`, `config`, `dto`),
+`UptimeService` + controller + `UptimeResponse`, shared `ErrorResponse` and
+`@RestControllerAdvice`, placeholder `index.html`. Then package a JAR and take the first TITAN
+reading.
