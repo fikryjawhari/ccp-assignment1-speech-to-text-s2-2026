@@ -1,3 +1,17 @@
 spring:
   application:
     name: ccp-assignment1-speech-to-text
+
+  threads:
+    virtual:
+      # Serve every request on a virtual thread rather than a pooled platform thread.
+      #
+      # Each transcription request spends almost all of its life blocked on the external
+      # speech-to-text call, doing no work. On platform threads that would cap us at Tomcat's
+      # default pool size of 200, so the 201st concurrent request would queue and wait -- the
+      # exact failure the assignment's concurrency requirement targets. Virtual threads unmount
+      # while blocked, so a parked request costs memory but not a thread, and controllers can
+      # stay in plain blocking style instead of going reactive.
+      #
+      # Requires Java 21+; this project targets Java 25 (see <java.version> in pom.xml).
+      enabled: true
