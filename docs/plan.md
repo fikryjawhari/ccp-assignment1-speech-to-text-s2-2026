@@ -15,7 +15,14 @@ checked on TITAN. The brief recommends exactly this shape:
   work.
 - Log the outcome of every TITAN check in [`progress.md`](progress.md), including failures — the
   failures are the evidence of genuine iterative development.
-- TITAN keeps a high-water mark, so a check can never make things worse.
+
+**What TITAN is:** a submission platform for the fat JAR. You upload the JAR, it runs automated
+functional checks against specific milestones and reports back. It keeps a high-water mark, so a
+check can never make things worse and there is no cost to uploading often. The GitHub repository
+is linked separately at final submission, for the source code.
+
+Practically: **the JAR is the only deliverable TITAN sees**, so anything that does not end up
+inside `target/*.jar` does not exist as far as the automated checks are concerned.
 
 Stages 1–5 build the required functionality. Stages 6–9 are what lift the result from Pass/Credit
 to Distinction/High Distinction, and each maps to a named rubric row.
@@ -70,6 +77,8 @@ any real complexity exists.
 - `StubTranscriptionClient` bound to the `local` profile; the real client to `titan`.
 - `@ConfigurationProperties` for the key, base URL, model, and timeout. Key read from
   `OPENAI_API_KEY` at runtime only.
+- **Model must be from the `gpt-4o-transcribe` family, not `whisper-1`** — see
+  [model constraint](#model-constraint) below.
 - Error mapping from upstream failures to the `ErrorResponse` shape.
 - Basic logging on the STT call — never the key, the `Authorization` header, or audio bytes.
 - Write `docs/security.md`.
@@ -81,9 +90,9 @@ API key, since it does not exist locally.
 
 *Rubric: criterion 1.* Makes `/api/v1/global/stats` real.
 
-- Verify whether the chosen transcription model returns usage data; if not, choose one that does.
-  This constrains the model, so confirm it before building on it.
-- Accumulate input/output tokens across requests in `AtomicLong` counters.
+- Read `usage.input_tokens` and `usage.output_tokens` off each transcription response.
+- Accumulate them across requests in `AtomicLong` counters.
+- Confirm the field names against a real response on TITAN — the local stub cannot prove this.
 
 **TITAN check:** stats increase correctly after transcriptions, reset on restart.
 
@@ -139,10 +148,27 @@ API key, since it does not exist locally.
 
 ---
 
+## Model constraint
+
+`/api/v1/global/stats` must report `inputTokens` and `outputTokens`. The transcriptions API
+returns two different `usage` shapes depending on how the model is billed:
+
+| Model family | `usage` object | Usable for our stats? |
+| --- | --- | --- |
+| `gpt-4o-transcribe`, `gpt-4o-mini-transcribe`, `gpt-transcribe` | `{ type: "tokens", input_tokens, output_tokens, total_tokens, input_token_details: { text_tokens, audio_tokens } }` | **Yes** |
+| `whisper-1` | `{ type: "duration", seconds }` | **No** — no token counts at all |
+
+So `whisper-1` cannot satisfy the spec, and the choice is made for us. The YAML asking for
+input/output *tokens* rather than audio seconds is a strong hint the assignment expects a
+token-billed model. Verified against the OpenAI API reference on 2026-08-18; re-check the field
+names against a real response at Stage 5, since the stub cannot prove them.
+
+Other API constraints worth knowing now: accepted formats are **mp3, mp4, mpeg, mpga, m4a, wav,
+webm**, with a **25 MB** file limit.
+
 ## Deferred decisions
 
 | Decision | Settled in |
 | --- | --- |
 | Transcription endpoint path, request shape, audio format | Stage 3 |
-| Transcription model, and whether it reports token usage | Stage 5 |
 | Audio compression vs chunking for the client optimisation | Stage 8 |

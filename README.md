@@ -36,6 +36,11 @@ machine-tested by TITAN, so paths, status codes, and field names must match exac
 Plus the transcription endpoint consumed by the web page, which is not part of the supplied
 YAML and is therefore ours to design.
 
+`/api/v1/global/stats` reporting *tokens* constrains the model: `whisper-1` is billed by audio
+duration and its `usage` object contains only `{ seconds, type }`, with no token counts. The
+`gpt-4o-transcribe` family is billed by token and returns `input_tokens`/`output_tokens`, so the
+model must come from that family. See [`docs/plan.md`](docs/plan.md#model-constraint).
+
 Failures return the shared `ErrorResponse` shape: `timestamp`, `status`, `error`, `message`, `path`.
 Schemas are `additionalProperties: false` — do not add extra fields to responses.
 

@@ -129,11 +129,40 @@ JDK 25. `BOOT-INF/lib` in that JAR contains only `tomcat-embed-*`, `spring-boot-
 
 **Open questions carried forward:**
 
-- Does the transcription model return token usage? `/api/v1/global/stats` requires
-  `inputTokens`/`outputTokens`, so this constrains the model choice. Cheap to check now,
-  expensive to discover at Stage 5.
-- Transcription endpoint path, request shape and audio format — settled at Stage 3.
-- Whether TITAN needs anything specific beyond a fat JAR (port, profile, upload format). Worth
-  reading the TITAN instructions before Stage 1's first check.
+- Transcription endpoint path, request shape and audio format — a design decision, not a lookup.
+  Settled at Stage 3.
+
+**Resolved before the session ended** — see the entry below.
 
 **Next session:** start by reading this file, then do the Stage 1 remainder listed above.
+
+## 2026-08-18 — Model constraint resolved, TITAN clarified
+
+Chased down two of the three open questions rather than carrying them.
+
+**Model choice is forced, not free.** Checked the OpenAI API reference for
+`POST /v1/audio/transcriptions`. The `usage` object has two different shapes depending on how the
+model is billed:
+
+- `whisper-1` is billed by audio duration → `{ type: "duration", seconds }`. **No token counts.**
+- The `gpt-4o-transcribe` family is billed by token → `{ type: "tokens", input_tokens,
+  output_tokens, total_tokens, input_token_details: { text_tokens, audio_tokens } }`.
+
+Since `/api/v1/global/stats` must report `inputTokens` and `outputTokens`, `whisper-1` cannot
+satisfy the spec. Recorded in [`plan.md`](plan.md#model-constraint) and the README. Worth noting
+the YAML asking for tokens rather than seconds looks like a deliberate nudge toward a
+token-billed model — so this is likely an intended part of the assignment rather than a trap.
+
+Also captured: accepted upload formats are mp3, mp4, mpeg, mpga, m4a, wav, webm, with a 25 MB
+limit. Relevant at Stage 3, because browser `MediaRecorder` output has to land inside that list.
+
+**Caveat:** this came from documentation, not from a live response. The field names must be
+confirmed against a real transcription at Stage 5, since the local stub cannot prove them.
+
+**TITAN, clarified.** It is a submission platform for the fat JAR: upload, it runs automated
+functional checks for specific milestones, reports back, and keeps a high-water mark. Nothing to
+configure and no cost to uploading often. The GitHub repository is linked separately at final
+submission for the source code. The practical consequence is now in `plan.md` — the JAR is the
+only artefact TITAN sees, so anything not inside `target/*.jar` does not exist to the checks.
+
+**Next session:** unchanged — Stage 1 remainder.
