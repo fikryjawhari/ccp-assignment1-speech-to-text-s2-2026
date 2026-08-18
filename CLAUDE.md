@@ -24,13 +24,18 @@ clever ones.
 
 ## Commands
 
+`java` on the shell `PATH` is Java 8, so `JAVA_HOME` must be set before the wrapper will run:
+
 ```bash
-./mvnw spring-boot:run                # run locally (PowerShell: .\mvnw.cmd)
-./mvnw test                           # run tests
-./mvnw clean package                  # build the fat JAR deliverable
+export JAVA_HOME=~/.jdks/jbrsdk_jcef-25.0.4   # JetBrains Runtime 25, installed by IntelliJ
+./mvnw spring-boot:run                        # run locally (PowerShell: .\mvnw.cmd)
+./mvnw test                                   # run tests
+./mvnw clean package                          # build the fat JAR deliverable
 ```
 
-Requires JDK 25 on `JAVA_HOME`; `java` on the default `PATH` is Java 8.
+Known environment quirks and their workarounds are in
+[`docs/troubleshooting.md`](docs/troubleshooting.md) — check there before debugging a build
+failure, and add to it whenever a new one costs time.
 
 ## File locations
 
@@ -149,8 +154,39 @@ upstream call. Use `RestClient` for outbound HTTP, never `WebClient`. No `Mono`,
 `@Async`, or `CompletableFuture` in controllers — blocking code on a virtual thread *is* the
 design, and mixing paradigms is what the rubric means by inappropriate framework use.
 
-`spring-boot-starter-webflux` is still in `pom.xml` and is removed in Stage 1. Rationale and the
-Tomcat `max-threads` pitfall are recorded in the README.
+`spring-boot-starter-webflux` was removed in Stage 1 (commit `0460d0a`), which also dropped
+reactor-core and Netty. Do not reintroduce any of them. Rationale and the Tomcat `max-threads`
+pitfall are recorded in the README.
+
+## Explaining every change
+
+**This is the most important rule in this file.** The student must be able to answer, without
+notes, "what does this do and why is it there?" about any line in the submission — that is
+explicitly what the course's AI policy and the code-quality rubric require. An unexplained change
+is a liability even when the code is correct.
+
+After every change, explain it at **both** levels:
+
+**High level — the shape of it.**
+- What was the problem or requirement being addressed?
+- Which files changed, and what is each file's *job* in the project? Never assume a file's
+  purpose is self-evident; say what `application.yaml`, a `@RestControllerAdvice`, or a
+  `@ConfigurationProperties` class is *for* the first few times each appears.
+- Why this approach and not the obvious alternative? Name the alternative that was rejected.
+- How does it fit the assignment requirement or rubric row it serves?
+
+**Low level — the details worth being asked about.**
+- Line-by-line for anything non-obvious: what a specific annotation does, why a field is `final`,
+  why `AtomicLong` and not `long`, what Spring does behind an annotation at startup.
+- Any Spring machinery invoked implicitly — component scanning, auto-configuration, bean
+  lifecycle. These are the "how does it actually work" questions, and the ones most likely to be
+  asked about code that was AI-assisted.
+- Anything that would look arbitrary to a reader: magic numbers, ordering that matters, a
+  workaround for a specific failure.
+- What was verified, how, and what the evidence was — not just "it works".
+
+Flag anything genuinely subtle as worth understanding properly rather than letting it slide by.
+If a change is too large to explain in one pass, it is too large to make in one pass — split it.
 
 ## Working rhythm
 
