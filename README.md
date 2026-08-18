@@ -94,7 +94,7 @@ These do not exist yet.
 
 - Java 25, Spring Boot 4.1, Maven (wrapper included).
 - Group `edu.adelaide`, base package `edu.adelaide.assignment1speechtotext`.
-- Current dependencies: `webmvc`, `webflux`, `restclient`, `validation`, `actuator`, `devtools`.
+- Current dependencies: `webmvc`, `restclient`, `validation`, `actuator`, `devtools`.
 
 **Web stack: Spring MVC on virtual threads.** Controllers are written in ordinary blocking
 style; `spring.threads.virtual.enabled=true` on Java 25 gives each request a virtual thread that
@@ -108,12 +108,23 @@ threading" as a route to full concurrency marks, and its High Distinction test i
 
 The deployment pitfall this avoids: Tomcat's default `max-threads` is **200**, so a plain MVC
 app without virtual threads would fail the load test at exactly the threshold the rubric names.
-`spring-boot-starter-webflux` is still on the classpath and is removed in Stage 1.
+
+`spring-boot-starter-webflux` was removed in Stage 1. It had been on the classpath alongside
+`webmvc`; that was misleading rather than broken, since Spring Boot silently prefers servlet MVC
+when it finds both. Removing it also dropped reactor-core and Netty transitively — confirmed by
+inspecting `BOOT-INF/lib` in the packaged JAR, which now contains only `tomcat-embed-*`,
+`spring-boot-webmvc` and `spring-webmvc`.
 
 ## Build and run
 
-Requires a **JDK 25** on `JAVA_HOME`. (Note: `java` on the current `PATH` is Java 8; the IDE
-supplies 25. Set `JAVA_HOME` explicitly before using the Maven wrapper from a shell.)
+Requires a **JDK 25**. `java` on the shell `PATH` is Java 8, so `JAVA_HOME` must be set
+explicitly before using the Maven wrapper outside the IDE. On this machine the JDK 25 is the
+JetBrains Runtime that IntelliJ installed:
+
+```bash
+export JAVA_HOME=~/.jdks/jbrsdk_jcef-25.0.4      # Git Bash
+$env:JAVA_HOME = "$HOME\.jdks\jbrsdk_jcef-25.0.4" # PowerShell
+```
 
 ```bash
 # Run locally with live reload
@@ -129,7 +140,8 @@ java -jar target/assignment1-speech-to-text-0.0.1-SNAPSHOT.jar
 
 On Windows PowerShell, use `.\mvnw.cmd` in place of `./mvnw`.
 
-The app serves at http://localhost:8080/.
+The app serves at http://localhost:8080/. If a build misbehaves, check
+[`docs/troubleshooting.md`](docs/troubleshooting.md) before digging.
 
 ### Configuration
 
@@ -157,6 +169,8 @@ src/test/java/...                                     Tests, mirroring main pack
 docs/assignment-brief.md                              Verbatim assignment brief
 docs/assignment1api.yaml                              OpenAPI contract for the admin/stats API
 docs/rubric.md                                        Marking rubric
+docs/plan.md, docs/progress.md                        Build plan and running progress log
+docs/troubleshooting.md                               Environment quirks and their fixes
 CLAUDE.md                                             Conventions for AI-assisted work
 ```
 
