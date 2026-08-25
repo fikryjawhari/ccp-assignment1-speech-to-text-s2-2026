@@ -66,7 +66,11 @@ Under the base package `edu.adelaide.assignment1speechtotext`, group by responsi
   with an OpenAI-backed implementation; the rubric requires controller tests to run against a
   stub, so this seam is mandatory, not speculative.
 - `config` — `@Configuration` classes and `@ConfigurationProperties` types.
-- `dto` — request/response records shared across layers.
+- `dto` — request/response records shared across layers. **Every response record lives here,
+  including `ErrorResponse`**, even though only the exception handler produces it. Considered and
+  rejected: putting `ErrorResponse` in `web` next to its only producer. It is the response type of
+  every endpoint in the app, so the most-shared record belongs in the shared package, and one
+  package-by-layer rule is easier to apply than a layer/feature mix.
 
 Create a package only when there is something to put in it; do not scaffold empty ones.
 
@@ -157,6 +161,52 @@ design, and mixing paradigms is what the rubric means by inappropriate framework
 `spring-boot-starter-webflux` was removed in Stage 1 (commit `0460d0a`), which also dropped
 reactor-core and Netty. Do not reintroduce any of them. Rationale and the Tomcat `max-threads`
 pitfall are recorded in the README.
+
+## How code gets written here
+
+**The student writes the implementation. Claude scaffolds and explains.** This is a standing
+rule for the whole project, not a preference for one stage. It exists because the course requires
+the student to defend every line without notes, and because code you typed yourself is code you
+remember.
+
+The loop, in order:
+
+1. **Claude creates the files** with the package declaration, imports, class and method
+   signatures, annotations, and Javadoc — the parts that require knowing the framework and
+   cannot be derived from first principles.
+2. **Claude marks the gaps** with `// TODO(you):` comments saying *what* goes there and *why*,
+   never the code itself. The student deletes each TODO as they fill it in; none survive into a
+   commit.
+3. **Claude explains in the chat, not in the files.** What the new machinery is, what it does at
+   runtime, which decisions are genuinely the student's, and which traps are nearby.
+4. **The student writes the bodies**, builds, and pastes back the result or the error.
+5. **Claude reviews**, explains anything that was wrong, and the student makes the correction.
+
+Do not fill in a `TODO(you)` unless the student asks for it directly. If they are stuck, break
+the problem into smaller decisions and give a shortlist of options with trade-offs — not the
+answer. Offering the answer to someone who is nearly there is the failure mode to avoid.
+
+Commit authorship follows the same line: work the student wrote gets committed under their name
+alone. Only changes Claude actually authored — usually docs — carry the `Co-Authored-By` trailer.
+Every commit carrying it when the student wrote the code misrepresents the history the brief says
+is inspected.
+
+### Assume no Java or web background
+
+The student's prior experience is Python — a CLI tool driving an Arduino is the high-water mark.
+No Java, no Spring, no web development, no cloud. Explain accordingly:
+
+- **Introduce framework machinery the first time it appears.** `@Service`, `ResponseEntity`,
+  generics, `static final`, component scanning, bean lifecycle. Say what it is, what Spring does
+  with it at runtime, and what the plain-Java equivalent would be.
+- **Anchor to Python where there is an honest parallel** — a record is roughly a frozen
+  dataclass, a controller is roughly a Flask route — then say where the analogy stops.
+- **Name the Java-specific traps before they are hit**, not after. Two have already cost time:
+  integer division silently discarding the fraction (`toMillis() / 1000` vs `/ 1000.0`), and
+  `long` being a whole-number type rather than a bigger `double`.
+- **Take types from the YAML's `format:`, never from an example.** `format: double` means
+  `double`; `format: int32` means `int`. An example value that happens to look round is not a
+  type.
 
 ## Explaining every change
 
