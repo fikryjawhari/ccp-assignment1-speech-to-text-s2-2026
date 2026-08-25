@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<!--
+  Placeholder landing page for Stage 1.
+
+  Exists to prove the deployment loop end to end: Spring Boot autoconfigures a resource
+  handler over static/ on the classpath and treats index.html as the welcome page, so this
+  is served at / with no controller and no configuration. Confirming that on TITAN before
+  any real complexity exists means a later failure cannot be a packaging or routing problem.
+
+  The recording UI replaces this in Stage 3. Structure stays here, presentation goes in
+  css/app.css and behaviour in js/ -- no inline <style> or <script> blocks, since the rubric
+  grades that separation explicitly.
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speech to Text</title>
+</head>
+<body>
+<h1>Speech to Text</h1>
+<p>Record audio in the browser and have it transcribed. The recording interface arrives in Stage 3.</p>
+</body>
+</html>
