@@ -62,6 +62,28 @@ the deliverable, not what Maven believes the graph to be.
 
 ---
 
+## `./mvnw clean` fails: "The process cannot access the file"
+
+**Symptom:**
+
+```
+Failed to clean project: Failed to delete targetssignment1-speech-to-text-0.0.1-SNAPSHOT.jar:
+The process cannot access the file because it is being used by another process
+```
+
+**Cause:** the app is still running from a previous `java -jar`. Windows locks a file that a
+running process has open, so Maven cannot delete the JAR it is trying to replace. The message
+names your own JAR without saying that your own app is what holds it.
+
+**Fix:** stop the running app (Ctrl+C in its terminal), then rebuild.
+
+**Worth knowing:** this failure does not exist on Linux, which allows deleting a file that a
+running process still has open. TITAN is Linux, so this is a local-only annoyance -- but on
+Windows it will recur every time the server is left running before a rebuild. If a build fails
+immediately at the `clean` step, check for a running app before anything else.
+
+---
+
 ## `curl` in PowerShell prints a "Script Execution Risk" prompt
 
 **Symptom:** calling an endpoint with `curl` stops on an interactive prompt:

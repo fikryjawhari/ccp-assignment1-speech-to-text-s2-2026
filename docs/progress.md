@@ -23,10 +23,10 @@ Entry format:
 
 | | |
 | --- | --- |
-| **Stage** | 1 — skeleton (configuration done, no code yet) |
-| **Next** | Stage 1 remainder — package structure, `/api/v1/admin/uptime`, placeholder `index.html`, `ErrorResponse` + advice |
-| **Last TITAN check** | none yet |
-| **Last worked on** | 2026-08-18 |
+| **Stage** | 1 complete — checked on TITAN, 2/10 |
+| **Next** | Stage 2 — remaining admin endpoints, plus two bugs TITAN found (see below) |
+| **Last TITAN check** | 2026-08-25 — 2/10. Both Stage 1 targets passed. |
+| **Last worked on** | 2026-08-25 |
 | **Uncommitted work** | none — everything committed and pushed |
 
 ---
@@ -166,3 +166,76 @@ submission for the source code. The practical consequence is now in `plan.md` �
 only artefact TITAN sees, so anything not inside `target/*.jar` does not exist to the checks.
 
 **Next session:** unchanged — Stage 1 remainder.
+
+## 2026-08-25 — Stage 1 complete, first TITAN check
+
+**Done:** the whole Stage 1 deliverable. Three commits of code, all written by the student
+against scaffolds (signatures, imports, annotations) rather than handed over finished.
+
+- `dto/UptimeResponse` — record matching the YAML schema; `service/UptimeService` holding the
+  start `Instant`; `web/UptimeController` exposing `GET /api/v1/admin/uptime`. Establishes the
+  `web`/`service`/`dto` package split.
+- `dto/ErrorResponse` + `web/GlobalExceptionHandler` — the shared five-field error body and the
+  `@RestControllerAdvice` that produces it.
+- `static/index.html` — placeholder landing page, served at `/` by Boot's welcome-page
+  auto-configuration with no controller.
+
+**TITAN: 2/10.** Both Stage 1 targets passed:
+
+```
+[YES] First call to /api/v1/admin/uptime API gave correct result.
+[YES] Page at http://localhost:8080 came up without error.
+```
+
+The other eight are Stages 2-4 and were not expected to pass. The run also surfaced three things
+that could not have been found locally:
+
+**1. Uptime is under-reported — a real bug, fix in Stage 2.** TITAN said "Reported uptime is
+incorrect, the true value is larger". `UptimeService` captures its `Instant` when Spring
+constructs the bean, but TITAN measures from process launch. The startup log shows the gap:
+`Starting` at 11:23:52.926, `Tomcat started` at 11:23:56.287, "process running for 7.282" — so
+several seconds are lost every time. The YAML says "the UTC timestamp at which the server
+*process* started", which settles the bean-construction-vs-JVM-start question that was previously
+open: it means the JVM, and there is a runtime API that reports it.
+
+**2. The catch-all handler is too greedy.** `/api/v1/global/stats` and `/api/v1/admin/shutdown`
+do not exist yet, so Spring fell through to the static resource handler and threw
+`NoResourceFoundException`. `@ExceptionHandler(Exception.class)` caught it and returned 500 —
+but a missing endpoint should be 404. Framework exceptions carry their own correct status, and
+the greedy handler discards it. Revisit in Stage 2 once both real endpoints exist.
+
+**3. TITAN runs Java 26 (Temurin 26.0.2); we build on 25.** The JAR ran fine, but any future
+Java-25-only assumption would break there and not here.
+
+Also confirmed: `JAVA EXIT CODE: 143` means TITAN force-killed the process. The graceful-shutdown
+check needs *our* endpoint to end the process, not the harness giving up.
+
+**Verified locally before upload:** JAR builds clean, `BOOT-INF/classes/static/index.html` is
+present inside the archive (the source tree existing is not the same claim), the error handler
+returns HTTP 500 with the five schema fields and a fixed message when a controller throws, with
+the full stack trace going to the log instead of the response, and reverting that test throw
+restored a 200.
+
+**Learned / decided:**
+
+| Decision | Chosen | Rejected, and why |
+| --- | --- | --- |
+| `ErrorResponse` package | `dto`, with all response records | `web` next to its only producer. It is the response type of *every* endpoint, so the most-shared record belongs in the shared package, and one package-by-layer rule beats a layer/feature mix. |
+| `serverUptimeSeconds` type | `double` | `long` — the YAML types it `format: double` with example `9000.5`. Whole seconds fail the schema. Forced `/ 1000.0` rather than `/ 1000`, since Java's integer division discards the remainder. |
+| Error `error` field | Derived via `status.getReasonPhrase()` | A second hardcoded string — one `HttpStatus` local now feeds the body's numeric field, the transport status and the reason phrase, so they cannot disagree. |
+| Error `message` field | Fixed generic string | `exception.getMessage()` — from Stage 4 an upstream failure can carry the `Authorization` header in its message, so that would publish the API key over HTTP. Detail goes to the log; the caller gets nothing exploitable. |
+| Handler request parameter | `HttpServletRequest.getRequestURI()` | `WebRequest.getDescription(false)` returns `uri=/path`, needing string surgery to match the schema. |
+
+**Surprise worth keeping:** the log line `[omcat-handler-0]` (truncated `tomcat-handler-N`, not
+`http-nio-8080-exec-N`) is visible proof that virtual threads are actually in use, not merely
+configured. Stage 6 has to demonstrate exactly that, and the same evidence appears in TITAN's
+stack traces as `java.base/java.lang.VirtualThread.run`.
+
+**Working practice, now a standing rule in `CLAUDE.md`:** Claude scaffolds files with signatures,
+imports and annotations and marks gaps with `TODO(you)`; the student writes the bodies; Claude
+reviews. Commits carry `Co-Authored-By` only where Claude actually authored the change, so the
+history reflects who wrote what.
+
+**Next:** Stage 2 — `GET /api/v1/global/stats` returning zeros, `POST /api/v1/admin/shutdown`
+with graceful shutdown, plus the two bugs above: uptime measured from JVM start, and the greedy
+catch-all handler letting framework exceptions keep their own status codes.
