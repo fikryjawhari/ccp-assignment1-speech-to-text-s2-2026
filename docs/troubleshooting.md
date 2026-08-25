@@ -11,11 +11,18 @@ Chronological narrative lives in [`progress.md`](progress.md); this file is the 
 
 ## `./mvnw` fails, or the build targets the wrong Java version
 
+**This is machine-specific — check before assuming you have it.** Run `java -version` first.
+
+| Machine | `java` on `PATH` | `JAVA_HOME` needed? |
+| --- | --- | --- |
+| Laptop | Java 8 (`C:\Program Files\Java\jre-1.8`) | **Yes** |
+| Desktop PC | Java 25.0.2 | No — `./mvnw` works as-is |
+
 **Symptom:** compilation errors about unsupported class file versions, or Maven refusing to run.
 
-**Cause:** `java` on the shell `PATH` is Java 8 (`C:\Program Files\Java\jre-1.8`), but the
-project targets Java 25 via `<java.version>` in `pom.xml`. IntelliJ has its own JDK configured,
-so builds succeed in the IDE and fail in a shell — which makes this look intermittent.
+**Cause:** `java` on the shell `PATH` is Java 8, but the project targets Java 25 via
+`<java.version>` in `pom.xml`. IntelliJ has its own JDK configured, so builds succeed in the IDE
+and fail in a shell — which makes this look intermittent.
 
 **Fix:** point `JAVA_HOME` at the JetBrains Runtime 25 that IntelliJ installed.
 

@@ -35,3 +35,7 @@ build/
 ### Secrets ###
 .env
 *.env
+
+### Local tooling ###
+# Claude Code MCP bridge -- points at an IntelliJ port local to one machine.
+.mcp.json
