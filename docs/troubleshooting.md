@@ -62,6 +62,33 @@ the deliverable, not what Maven believes the graph to be.
 
 ---
 
+## `curl` in PowerShell prints a "Script Execution Risk" prompt
+
+**Symptom:** calling an endpoint with `curl` stops on an interactive prompt:
+
+```
+Security Warning: Script Execution Risk
+Invoke-WebRequest parses the content of the web page...
+[Y] Yes  [A] Yes to All  [N] No ...
+```
+
+**Cause:** in PowerShell, `curl` is an **alias for `Invoke-WebRequest`**, which is a different
+tool that tries to parse the response as HTML. Real curl was never invoked.
+
+**Fix:** answer `N`, then use one of:
+
+```powershell
+curl.exe http://localhost:8080/api/v1/admin/uptime        # the real curl
+Invoke-RestMethod http://localhost:8080/api/v1/admin/uptime   # PowerShell-native
+```
+
+Prefer `curl.exe` when checking a response against the API contract.
+`Invoke-RestMethod` parses the JSON into a PowerShell object, which hides the raw text --
+and the raw text is what you need in order to confirm timestamp formatting and exact field
+names.
+
+---
+
 ## Git warns "LF will be replaced by CRLF"
 
 **Symptom:** every `git add` on Windows prints a warning per file.
