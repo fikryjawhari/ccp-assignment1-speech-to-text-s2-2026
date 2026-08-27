@@ -23,11 +23,11 @@ Entry format:
 
 | | |
 | --- | --- |
-| **Stage** | 1 complete — checked on TITAN, 2/10 |
-| **Next** | Stage 2 — remaining admin endpoints, plus two bugs TITAN found (see below) |
+| **Stage** | 2 in progress — uptime bug fixed and verified; 404 bug not yet fixed |
+| **Next** | One-word fix in `GlobalExceptionHandler` (see 2026-08-27 entry), then the Stage 2 endpoints |
 | **Last TITAN check** | 2026-08-25 — 2/10. Both Stage 1 targets passed. |
-| **Last worked on** | 2026-08-25 |
-| **Uncommitted work** | none — everything committed and pushed |
+| **Last worked on** | 2026-08-27 |
+| **Uncommitted work** | **Yes** — `UptimeService`, `GlobalExceptionHandler`, `application.yaml`. Six Stage 2 scaffolds parked outside the repo. |
 
 ---
 
@@ -239,3 +239,104 @@ history reflects who wrote what.
 **Next:** Stage 2 — `GET /api/v1/global/stats` returning zeros, `POST /api/v1/admin/shutdown`
 with graceful shutdown, plus the two bugs above: uptime measured from JVM start, and the greedy
 catch-all handler letting framework exceptions keep their own status codes.
+
+## 2026-08-27 — Stage 2 (part 1): the two Stage 1 bugs
+
+Short session, stopped early through tiredness. One bug fixed and verified, one diagnosed but not
+fixed. **Nothing committed** — see the state note at the end.
+
+**Bug 1 — uptime measured from JVM start. Fixed and verified.**
+
+`UptimeService` took `Instant.now()` in its constructor, which answers "when did Spring build this
+bean", not "when did the process start". TITAN measured the difference and failed us.
+
+Fixed by reading `ManagementFactory.getRuntimeMXBean().getStartTime()` — the JDK's own view of the
+running JVM, giving epoch millis of process launch — and converting with `Instant.ofEpochMilli`.
+The value is constant for the life of the process, so it is read once into a `final` field rather
+than per request.
+
+*Decision, and the alternative rejected.* `currentUptime()` could compute the elapsed seconds
+either from `Duration.between(utcServerStart, utcNow)` or from `RuntimeMXBean.getUptime()`. Kept
+the former. The contract defines `serverUptimeSeconds` **as** the difference between the other two
+fields it returns, so a validator can check the three fields against each other. Deriving all
+three from one `Instant.now()` reading makes that arithmetic exact by construction; calling
+`getUptime()` would be a second, independent clock reading taken microseconds later, and the two
+are not even the same clock — `Instant.now()` is wall-clock and NTP-adjustable, `getUptime()` is
+monotonic. `getUptime()` is arguably the more truthful measure of real elapsed time, but internal
+consistency is what the spec asks for and what gets checked.
+
+*Verified by running the app.* The startup log gave the ground truth — `Started ... (process
+running for 1.694)` at 18:57:58.934, so JVM launch was approximately 18:57:57.24. The endpoint
+reported `utcServerStart` of `2026-08-27T09:27:57.263Z`, matching. Self-consistency was exact:
+
+```
+reported serverUptimeSeconds : 18.372
+utcNow - utcServerStart      : 18.372   (delta 0 s)
+```
+
+**Bug 2 — greedy catch-all returning 500 for unknown paths. Diagnosed, NOT fixed.**
+
+A second `@ExceptionHandler` was added to `GlobalExceptionHandler` to let framework exceptions keep
+their own status codes, with the body correctly converting `getStatusCode()` to
+`HttpStatus.valueOf` to reason phrase. It compiles, and it is **inert** — the request still
+returns 500.
+
+The cause is the exception type it was told to catch. Claude's scaffold said
+`@ExceptionHandler(ErrorResponseException.class)`. That is wrong. Confirmed from the Spring 7.0.8
+sources jar:
+
+```java
+public class NoResourceFoundException extends ServletException implements ErrorResponse
+```
+
+It implements the **interface** `org.springframework.web.ErrorResponse`; it does not extend the
+**class** `ErrorResponseException`. Spring has both, and they are easy to confuse:
+
+| Type | What it is | Role |
+| --- | --- | --- |
+| `org.springframework.web.ErrorResponse` | interface | "I know my own HTTP status" — what framework exceptions implement |
+| `org.springframework.web.ErrorResponseException` | class | a ready-made throwable *implementation*, one of many |
+
+Spring's own MVC exceptions extend whatever base class suits them (`ServletException`,
+`NestedRuntimeException`, and so on) and advertise their status through the interface, so catching
+the class matches almost none of them. `@ExceptionHandler` accepts an interface and matches on
+capability rather than ancestry, which is the whole point.
+
+**Fix for next session:** change the annotation and the parameter type to Spring's `ErrorResponse`
+interface. `getStatusCode()` is declared directly on it (line 52 of its source), so the four lines
+inside the method need no change. Watch the name collision — `dto.ErrorResponse` is already
+imported in that file, so Spring's has to be referred to by its fully-qualified name.
+
+**Learned:** a clean compile proved nothing here. The handler was well-formed, correctly imported
+and completely dead. Only running the app and reading the thrown type off the log found it — which
+is exactly why TITAN caught the original and the laptop did not. Worth remembering for the rest of
+Stage 2: *verify behaviour, not compilation.*
+
+**Also done:** `server.shutdown: graceful` and `spring.lifecycle.timeout-per-shutdown-phase: 10s`
+added to `application.yaml`, ready for the shutdown endpoint. 10s rather than Boot's default 30s,
+because the latency budget says a transcription displays within 5s, so anything still running after
+10s is stuck rather than slow.
+
+**Environment:** work moved to the desktop, where the JDK is Oracle 25.0.2 at
+`C:\Program Files\Java\jdk-25.0.2` and `JAVA_HOME` is already set system-wide — `.\mvnw.cmd` works
+with no exporting. `troubleshooting.md` had hardcoded the laptop's now-nonexistent JetBrains
+Runtime path; rewritten to say "any JDK 25+, find the one this machine has" with commands to locate
+it. The version is the constraint; the path never was.
+
+**Uncommitted work — the tree is not clean:**
+
+- Modified: `service/UptimeService.java` (fix verified), `web/GlobalExceptionHandler.java` (fix
+  inert), `resources/application.yaml` (shutdown config), `docs/troubleshooting.md`, this file.
+- Six Stage 2 scaffolds — `dto/GlobalStatsResponse`, `dto/ShutdownResponse`, `service/StatsService`,
+  `service/ShutdownService`, `web/StatsController`, `web/ShutdownController` — were moved **out of
+  the repository** to `C:\Users\fikry\.claude\jobs\729e4592\tmp\stash\` so the two bug fixes could
+  be compiled alone. They must be moved back before Stage 2 continues. One of them,
+  `StatsController`, has a deliberate-scaffold compile error (`final` field never assigned in an
+  empty constructor body) that is Claude's to fix, not a student TODO.
+
+Nothing was committed because only one of the two fixes works, and a commit claiming both would be
+false.
+
+**Next:** move the scaffolds back, apply the one-word `ErrorResponse` fix, re-run and confirm an
+unknown path now returns 404 with the five-field body, then commit the two fixes together. After
+that, the Stage 2 endpoints proper: the `TODO(you)` markers in the stats and shutdown scaffolds.

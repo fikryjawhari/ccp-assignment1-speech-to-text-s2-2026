@@ -15,25 +15,41 @@ Chronological narrative lives in [`progress.md`](progress.md); this file is the 
 
 | Machine | `java` on `PATH` | `JAVA_HOME` needed? |
 | --- | --- | --- |
-| Laptop | Java 8 (`C:\Program Files\Java\jre-1.8`) | **Yes** |
-| Desktop PC | Java 25.0.2 | No — `./mvnw` works as-is |
+| Laptop | Java 8 (`C:\Program Files\Java\jre-1.8`) | **Yes** — set it per shell |
+| Desktop PC | Java 25.0.2 | No — already set system-wide, `.\mvnw.cmd` works as-is |
 
-**Symptom:** compilation errors about unsupported class file versions, or Maven refusing to run.
+**Symptom:** compilation errors about unsupported class file versions, or Maven refusing to run
+with `The JAVA_HOME environment variable is not defined correctly`.
 
 **Cause:** `java` on the shell `PATH` is Java 8, but the project targets Java 25 via
 `<java.version>` in `pom.xml`. IntelliJ has its own JDK configured, so builds succeed in the IDE
 and fail in a shell — which makes this look intermittent.
 
-**Fix:** point `JAVA_HOME` at the JetBrains Runtime 25 that IntelliJ installed.
+**Fix:** point `JAVA_HOME` at *any* JDK 25 or newer. The wrapper does not care which vendor or
+which directory — only that the version satisfies `<java.version>`. Do not hardcode a path from
+another machine; find the one this machine actually has:
 
-```bash
-export JAVA_HOME=~/.jdks/jbrsdk_jcef-25.0.4        # Git Bash
-$env:JAVA_HOME = "$HOME\.jdks\jbrsdk_jcef-25.0.4"  # PowerShell
+```powershell
+$env:JAVA_HOME                                    # already set?
+Get-ChildItem "C:\Program Files\Java"            # common install location
+Get-ChildItem "$env:USERPROFILE\.jdks"            # JDKs installed by IntelliJ
 ```
 
-Verify with `"$JAVA_HOME/bin/java" -version` — expect `openjdk version "25.0.4"`.
+Then set it for the shell, substituting the path you found:
+
+```bash
+export JAVA_HOME="/c/Program Files/Java/jdk-25.0.2"      # Git Bash
+$env:JAVA_HOME = "C:\Program Files\Java\jdk-25.0.2"     # PowerShell
+```
+
+Verify with `& "$env:JAVA_HOMEin\java" -version` — expect version 25 or higher.
 
 Virtual threads need Java 21+, so the whole concurrency design depends on this being right.
+
+**History:** this entry originally named `~/.jdks/jbrsdk_jcef-25.0.4`, the JetBrains Runtime on
+the laptop. That path does not exist on the desktop, where the JDK is Oracle 25.0.2 under
+`C:\Program Files\Java`. Naming a specific path was the mistake; the version requirement is the
+real constraint.
 
 ---
 
