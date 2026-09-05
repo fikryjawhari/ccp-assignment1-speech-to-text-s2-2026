@@ -136,3 +136,35 @@ names.
 **Fix:** none needed — this is expected and harmless. `.gitattributes` already pins the cases
 that matter (`mvnw` as LF, `*.cmd` as CRLF), which is what stops the wrapper breaking on
 non-Windows machines such as TITAN.
+
+---
+
+## `spring-boot:run` reports exit code 1 after a successful graceful shutdown
+
+**Symptom:** `POST /api/v1/admin/shutdown` works — the log shows `Graceful shutdown complete`
+and port 8080 is released — but Maven then prints:
+
+```
+[ERROR] Failed to execute goal ...:run (default-cli): Process terminated with exit code: 1
+[INFO] BUILD FAILURE
+```
+
+**Cause:** not a bug in the application. `spring-boot:run` forks the app as a child process and
+supervises it, treating a self-initiated exit as abnormal termination of the thing it was
+babysitting. The exit code belongs to the plugin's view of events, not to the JVM.
+
+**Fix:** verify shutdown against the packaged JAR, which is what TITAN actually runs:
+
+```bash
+./mvnw.cmd clean package -DskipTests
+java -jar target/assignment1-speech-to-text-0.0.1-SNAPSHOT.jar
+# in another shell:
+curl.exe -s -X POST http://localhost:8080/api/v1/admin/shutdown
+```
+
+The same shutdown that reports 1 under the plugin exits **0** from the JAR.
+
+**Why it matters:** TITAN's check is "web server exited gracefully via the shutdown API", and it
+already reports `JAVA EXIT CODE: 143` when it has to force-kill the process. Exit code is the
+signal being graded, so it has to be read from the deliverable rather than from a dev-time
+wrapper. More generally: **anything about process lifecycle must be tested against the JAR.**
