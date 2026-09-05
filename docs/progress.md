@@ -23,11 +23,11 @@ Entry format:
 
 | | |
 | --- | --- |
-| **Stage** | 2 in progress — uptime bug fixed and verified; 404 bug not yet fixed |
-| **Next** | One-word fix in `GlobalExceptionHandler` (see 2026-08-27 entry), then the Stage 2 endpoints |
-| **Last TITAN check** | 2026-08-25 — 2/10. Both Stage 1 targets passed. |
-| **Last worked on** | 2026-08-27 |
-| **Uncommitted work** | **Yes** — `UptimeService`, `GlobalExceptionHandler`, `application.yaml`. Six Stage 2 scaffolds parked outside the repo. |
+| **Stage** | 2 complete — full YAML contract implemented and checked on TITAN |
+| **Next** | Stage 3 — front end: record/stop buttons, `MediaRecorder`, upload to a stub-backed endpoint |
+| **Last TITAN check** | 2026-09-05 — 4/11. All three Stage 2 targets passed. |
+| **Last worked on** | 2026-09-05 |
+| **Uncommitted work** | None — working tree clean. |
 
 ---
 
@@ -340,3 +340,82 @@ false.
 **Next:** move the scaffolds back, apply the one-word `ErrorResponse` fix, re-run and confirm an
 unknown path now returns 404 with the five-field body, then commit the two fixes together. After
 that, the Stage 2 endpoints proper: the `TODO(you)` markers in the stats and shutdown scaffolds.
+
+## 2026-09-05 — Stage 2 complete: 4/11 on TITAN
+
+**Done:** the whole Stage 2 deliverable, in four commits. The two outstanding Stage 1 bugs, then
+both remaining YAML endpoints.
+
+- `fix:` uptime from JVM start (verified 2026-08-27) plus the framework-exception handler.
+- `feat:` `GET /api/v1/global/stats` — `GlobalStatsResponse`, `StatsService`, `StatsController`.
+- `feat:` `POST /api/v1/admin/shutdown` — `ShutdownResponse`, `ShutdownService`,
+  `ShutdownController`.
+- `docs:` the `spring-boot:run` exit-code trap, filed in `troubleshooting.md`.
+
+**TITAN: 4/11**, up from 2/10. All three targets for this session passed.
+
+```
+T01 [YES] First call to /api/v1/admin/uptime API gave correct result.
+T02 [YES] First call to /api/v1/global/stats API gave correct result.
+T03 [YES] Page at http://localhost:8080 came up without error.
+T04 [NO]  Page has record button.
+T05 [  ]  Page clearly shows when recording has started.
+T06 [  ]  Page has stop recording button.
+T07 [  ]  Page clearly shows when recording has stopped.
+T08 [  ]  Page displays correct transcription within five seconds.
+T09 [  ]  Last call to /api/v1/global/stats API gave correct result.
+T10 [  ]  Last call to /api/v1/admin/uptime API gave correct result.
+T11 [YES] Web server exited gracefully via /api/v1/admin/shutdown API call.
+```
+
+**The check list grew from 10 to 11.** T06 `Page has stop recording button` is new — stop used to
+be implied by T07's "shows when recording has stopped", and is now graded as a control in its own
+right. Consequence for Stage 3: **start and stop must be two distinct, findable controls.** A
+single button that toggles its label between "Record" and "Stop" would likely fail T06, since a
+checker looking for a stop button will not find one while the page is idle. Two buttons, with the
+inactive one disabled, is the shape to build.
+
+**Reading the brackets matters.** `[NO]` means the check ran and failed; `[  ]` means it never
+ran. Only T04 is `[NO]`. T05–T10 are blank because TITAN runs a sequential scenario — load the
+page, record, stop, transcribe, re-check stats and uptime, shut down — and the chain stalls at the
+first failure. So T09 is not rejecting our stats; it has not looked at them. Worth knowing before
+chasing a phantom bug there.
+
+That said, T09 is the "last call" *after* a transcription, so it almost certainly expects the
+counters to have **increased**. Zeros satisfy T02 permanently but will not satisfy T09 — that row
+belongs to Stage 5. T10 re-checks uptime after a full session, which exercises the JVM-start fix
+over time rather than just at startup.
+
+**Learned / decided:**
+
+| Decision | Chosen | Rejected, and why |
+| --- | --- | --- |
+| Catching framework exceptions | `@ExceptionHandler(ServletException.class)` plus `instanceof org.springframework.web.ErrorResponse` | Naming the `ErrorResponse` **interface** in the annotation — impossible. The `@ExceptionHandler` argument is typed `Class<? extends Throwable>` and that interface does not extend `Throwable`. The 2026-08-27 entry's proposed fix was wrong on this point. |
+| Unhandled `ServletException` | Rethrow to the catch-all | Building a second 500 body here — would duplicate the message and lose the stack trace, since the catch-all logs at `error` with the exception while this handler logs at `warn` without it. |
+| Reading the two stats counters | Two unsynchronised `get()` calls | A `synchronized` block or one `AtomicReference` to an immutable pair. Both remove the skew, but blocking on a monitor can pin a carrier thread — the exact cost virtual threads exist to avoid — and the contract states no relationship between the two fields, so the skew is unobservable. Contrast `UptimeResponse`, where the contract *defines* the third field as the difference of the other two, so all three come from one `Instant.now()`. |
+| Shutdown thread | Named, non-daemon | A daemon thread does not keep the JVM alive: if the last other thread finished during the flush delay, the process could exit before the context closed, skipping graceful shutdown entirely. The name makes the log legible — three threads appear in the four-line shutdown sequence. |
+
+**Surprises worth keeping:**
+
+- **`spring-boot:run` reports exit code 1 for a perfectly clean shutdown.** The plugin supervises
+  the app as a child process and reads a self-initiated exit as abnormal termination. The same
+  shutdown exits **0** from the JAR. Since TITAN grades the exit code, this had to be tested
+  against the deliverable. Filed in `troubleshooting.md`.
+- **`HttpRequestMethodNotSupportedException` extends `ServletException`**, not
+  `NestedRuntimeException` as assumed mid-session. So the handler's coverage is wider than
+  expected — confirmed empirically by a 405, then in the 7.0.8 sources.
+- **The `else` branch of the exception handler is still unproven.** Both 404 and 405 take the
+  `instanceof` path; nothing tested throws a bare `ServletException` without the interface. Pin it
+  down in Stage 7 rather than assuming it works.
+
+**Verified before upload**, all against the packaged JAR rather than the Maven plugin: `/` 200,
+`/api/v1/admin/uptime` 200 with `utcNow - utcServerStart` matching `serverUptimeSeconds` to 1 ms,
+`/api/v1/global/stats` 200 with exactly the two schema fields, `/api/v1/nope` 404 with the
+five-field body, `POST /api/v1/admin/shutdown` 202 followed by JVM exit 0 and port 8080 released.
+Two concurrent shutdown POSTs returned exactly one 202 and one 409, so `compareAndSet` was
+exercised under real contention rather than assumed.
+
+**Next:** Stage 3 — the front end. `index.html` / `css/app.css` / `js/` as separate files,
+**separate record and stop buttons** (T04, T06), visible recording state (T05, T07),
+`MediaRecorder` capture, and upload to a backend endpoint returning canned text from the stub
+client. Path and multipart shape are decided in this stage; record the decision in the README.
