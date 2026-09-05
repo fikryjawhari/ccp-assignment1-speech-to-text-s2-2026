@@ -15,3 +15,16 @@ spring:
       #
       # Requires Java 21+; this project targets Java 25 (see <java.version> in pom.xml).
       enabled: true
+
+  lifecycle:
+    # How long the shutdown sequence waits for in-flight requests before forcing beans to close.
+    # Boot's default is 30s; a transcription of a sub-minute clip must display within 5s (see the
+    # latency budget in CLAUDE.md), so anything still running after 10s is stuck, not slow.
+    timeout-per-shutdown-phase: 10s
+
+server:
+  # Graceful, not immediate. On shutdown Tomcat stops accepting new connections and lets requests
+  # already being served run to completion, up to the timeout above. Without this the connector is
+  # torn down at once and every in-flight request is severed mid-response -- including, on a bad
+  # day, the 202 acknowledging the shutdown itself.
+  shutdown: graceful
