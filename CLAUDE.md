@@ -24,10 +24,11 @@ clever ones.
 
 ## Commands
 
-`java` on the shell `PATH` is Java 8, so `JAVA_HOME` must be set before the wrapper will run:
+The project needs a JDK 25. Whether `JAVA_HOME` must be set first is machine-specific — check
+`java -version` and see [`docs/troubleshooting.md`](docs/troubleshooting.md); on the desktop the
+`PATH` JDK is already 25 and no export is needed.
 
 ```bash
-export JAVA_HOME=~/.jdks/jbrsdk_jcef-25.0.4   # JetBrains Runtime 25, installed by IntelliJ
 ./mvnw spring-boot:run                        # run locally (PowerShell: .\mvnw.cmd)
 ./mvnw test                                   # run tests
 ./mvnw clean package                          # build the fat JAR deliverable

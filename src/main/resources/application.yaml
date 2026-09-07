@@ -2,6 +2,14 @@ spring:
   application:
     name: ccp-assignment1-speech-to-text
 
+  profiles:
+    # Default the profile so the application is runnable with a bare 'mvnw spring-boot:run' and,
+    # more importantly, so the packaged JAR still starts if it is launched with no environment
+    # set. TITAN overrides this with SPRING_PROFILES_ACTIVE=titan; an environment variable beats a
+    # value baked into the JAR, which is the whole reason this is safe to hardcode. Without a
+    # default there would be no TranscriptionClient bean at all and startup would fail outright.
+    default: local
+
   threads:
     virtual:
       # Serve every request on a virtual thread rather than a pooled platform thread.

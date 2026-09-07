@@ -34,7 +34,21 @@ machine-tested by TITAN, so paths, status codes, and field names must match exac
 | `GET` | `/api/v1/global/stats` | `200` | `inputTokens`, `outputTokens` (int64, cumulative since server start) |
 
 Plus the transcription endpoint consumed by the web page, which is not part of the supplied
-YAML and is therefore ours to design.
+YAML and is therefore ours to design. Settled in Stage 3:
+
+| Method | Path | Request | Success | Response body |
+| --- | --- | --- | --- | --- |
+| `POST` | `/api/v1/transcriptions` | `multipart/form-data`, audio in a part named `audio` | `200` | `text`, `durationMs` |
+
+- **`/api/v1` prefix and a plural noun** to match the conventions the supplied contract already
+  sets, rather than inventing a second style alongside it.
+- **Multipart, not a raw body.** The browser's `FormData` produces it natively, OpenAI's own
+  transcriptions API consumes it, and further fields can be added later without changing the
+  content type.
+- **Audio format is whatever the browser records** — `audio/webm` (Opus) on Chrome and Firefox,
+  `audio/mp4` on Safari. Both are on OpenAI's accepted list, and no browser records WAV natively,
+  so forcing one format would mean re-encoding in the page for no gain. The upload filename
+  carries the matching extension because the provider infers the container format from it.
 
 `/api/v1/global/stats` reporting *tokens* constrains the model: `whisper-1` is billed by audio
 duration and its `usage` object contains only `{ seconds, type }`, with no token counts. The
@@ -122,14 +136,9 @@ inspecting `BOOT-INF/lib` in the packaged JAR, which now contains only `tomcat-e
 
 ## Build and run
 
-Requires a **JDK 25**. `java` on the shell `PATH` is Java 8, so `JAVA_HOME` must be set
-explicitly before using the Maven wrapper outside the IDE. On this machine the JDK 25 is the
-JetBrains Runtime that IntelliJ installed:
-
-```bash
-export JAVA_HOME=~/.jdks/jbrsdk_jcef-25.0.4      # Git Bash
-$env:JAVA_HOME = "$HOME\.jdks\jbrsdk_jcef-25.0.4" # PowerShell
-```
+Requires a **JDK 25**. Whether `JAVA_HOME` must be set before using the Maven wrapper depends on
+the machine — see [`docs/troubleshooting.md`](docs/troubleshooting.md#jdk). Run `java -version`
+first; if it already reports 25 or higher, the wrapper works as-is.
 
 ```bash
 # Run locally with live reload
@@ -189,8 +198,6 @@ The work is broken into nine stages, each ending in a TITAN check. See
 
 ## Open decisions
 
-- **Transcription endpoint.** Path, request shape (multipart vs raw body), and audio format
-  accepted from the browser. Settled in Stage 3.
 - **Token accounting.** Whether the transcriptions API returns usage data for the chosen model,
   and what to count if it does not. Settled in Stage 5 — verify early, it constrains the model
   choice.

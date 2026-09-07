@@ -1,24 +1,63 @@
 <!DOCTYPE html>
 <!--
-  Placeholder landing page for Stage 1.
+  Structure only. Presentation lives in css/app.css and behaviour in js/*.js -- the rubric grades
+  that separation explicitly, so there are no inline <style> or <script> blocks anywhere in this
+  file, and no style= or onclick= attributes either.
 
-  Exists to prove the deployment loop end to end: Spring Boot autoconfigures a resource
-  handler over static/ on the classpath and treats index.html as the welcome page, so this
-  is served at / with no controller and no configuration. Confirming that on TITAN before
-  any real complexity exists means a later failure cannot be a packaging or routing problem.
-
-  The recording UI replaces this in Stage 3. Structure stays here, presentation goes in
-  css/app.css and behaviour in js/ -- no inline <style> or <script> blocks, since the rubric
-  grades that separation explicitly.
+  Spring Boot serves this with no controller and no configuration: static/ on the classpath is
+  auto-configured as a resource location and index.html is treated as the welcome page for /.
 -->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Speech to Text</title>
+    <link rel="stylesheet" href="css/app.css">
+    <!--
+      type="module" does two useful things: it lets the file use import/export, and it defers
+      execution until the document is parsed, so the script can query for elements immediately
+      without waiting on DOMContentLoaded.
+    -->
+    <script type="module" src="js/app.js"></script>
 </head>
 <body>
-<h1>Speech to Text</h1>
-<p>Record audio in the browser and have it transcribed. The recording interface arrives in Stage 3.</p>
+<main class="app">
+    <h1>Speech to Text</h1>
+    <p class="app__intro">Record from your microphone and have the audio transcribed.</p>
+
+    <!--
+      One button, not two. The control's label and action change with the state, so a single
+      target means the user never has to find a different button to stop what they started.
+      Stage 8 adds the accessibility work; the element is a real <button> from the start so it is
+      keyboard-operable and screen-reader-announced for free.
+    -->
+    <section class="recorder">
+        <button id="record-button" class="recorder__button" type="button">Start recording</button>
+
+        <!--
+          The visible "recording is in progress" indicator the brief asks for by name. It is a
+          separate element from the button so the indicator can animate independently, and it is
+          hidden rather than removed so no layout shifts when it appears.
+        -->
+        <p id="recording-indicator" class="recorder__indicator" hidden>Recording…</p>
+
+        <!--
+          role="status" makes this an ARIA live region: assistive technology announces changes to
+          its text without the user having to go looking. It is the correct role for a
+          non-urgent progress message, and it costs nothing to add now.
+        -->
+        <p id="status-message" class="recorder__status" role="status"></p>
+    </section>
+
+    <section class="transcript">
+        <h2>Transcript</h2>
+        <!--
+          aria-live="polite" for the same reason: the transcript arrives asynchronously, and
+          without it a screen-reader user gets no notification that the text they asked for has
+          appeared.
+        -->
+        <p id="transcript-output" class="transcript__output" aria-live="polite"></p>
+    </section>
+</main>
 </body>
 </html>
