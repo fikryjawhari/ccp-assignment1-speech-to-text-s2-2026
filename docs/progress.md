@@ -23,11 +23,11 @@ Entry format:
 
 | | |
 | --- | --- |
-| **Stage** | 2 complete — full YAML contract implemented and checked on TITAN |
-| **Next** | Stage 3 — front end: record/stop buttons, `MediaRecorder`, upload to a stub-backed endpoint |
+| **Stage** | 3 scaffolded, not implemented — all bodies are `TODO(you)` markers |
+| **Next** | Stage 3 implementation, then Stage 4 (student is doing both in one sitting) |
 | **Last TITAN check** | 2026-09-05 — 4/11. All three Stage 2 targets passed. |
-| **Last worked on** | 2026-09-05 |
-| **Uncommitted work** | None — working tree clean. |
+| **Last worked on** | 2026-09-07 |
+| **Uncommitted work** | None — working tree clean at `07719d7`. |
 
 ---
 
@@ -419,3 +419,74 @@ exercised under real contention rather than assumed.
 **separate record and stop buttons** (T04, T06), visible recording state (T05, T07),
 `MediaRecorder` capture, and upload to a backend endpoint returning canned text from the stub
 client. Path and multipart shape are decided in this stage; record the decision in the README.
+
+## 2026-09-07 — Stage 3: scaffolded, implementation deliberately discarded
+
+**Done:** Scaffolded the whole Stage 3 round trip (commit `07719d7`), with every method body left
+as a `TODO(you)` marker.
+
+- `client/TranscriptionClient` — the interface, plus `TranscriptionResult` (text + token counts)
+  and `StubTranscriptionClient` bound to `@Profile("local")`.
+- `service/TranscriptionService`, `web/TranscriptionController`, `dto/TranscriptionResponse`.
+- Front end split three ways: `index.html`, `css/app.css` (written in full), `js/recorder.js`
+  (wraps `MediaRecorder`'s event API behind promises) and `js/app.js` (the state machine).
+- `spring.profiles.default: local` so the packaged JAR starts with no environment set; TITAN's
+  `SPRING_PROFILES_ACTIVE=titan` overrides it.
+- `application-local.yaml` added.
+
+Implementations of the stub, service and controller *were* written in this session and then
+discarded at the student's request — brain fried, and the plan is to do Stages 3 and 4 together
+tomorrow from a clean start. Nothing of value is lost; the review findings below are the part
+worth keeping.
+
+**TITAN:** not checked — nothing implemented.
+
+**Decisions made:**
+
+| Decision | Chosen | Rejected, and why |
+| --- | --- | --- |
+| Transcription endpoint | `POST /api/v1/transcriptions` | `/api/transcribe` — the YAML versions everything under `/api/v1`; matching it keeps one convention |
+| Request shape | `multipart/form-data`, part named `audio` | Raw body — `FormData` produces multipart natively, OpenAI's own API consumes it, and fields can be added later without a content-type change |
+| Audio format | Whatever the browser records (`audio/webm`, or `audio/mp4` on Safari) | Forcing WAV — no browser records it natively, so it would mean re-encoding in the page for no gain |
+| Size limit | `spring.servlet.multipart.max-file-size: 25MB` in config | An `if` in the controller — config rejects mid-parse, before the payload is fully buffered; the `if` only fires after the whole upload is already in memory |
+
+Recorded in the README, and the matching "open decision" entry removed.
+
+**Review findings from the discarded implementation — re-check these tomorrow:**
+
+1. **The stub threw `ResponseStatusException`.** A layering violation: that is a web type meaning
+   "return this HTTP status", and a client adapter should not know HTTP responses exist. Stage 4's
+   OpenAI client would inherit the same problem. Validate once, at the controller.
+2. **`TranscriptionService` called `audio.getBytes()` twice**, once inside the timed region. A
+   `MultipartFile` may be backed by a temp file, so that is potentially a full disk read; it also
+   meant `durationMs` included reading the upload rather than just the provider call. Hoist it to
+   a local above `System.nanoTime()`.
+3. **`audio.getContentType().equals(...)` can NPE** — `getContentType()` returns null when the
+   client sends no per-part content type, giving a 500. Invert to
+   `!"audio/webm".equals(audio.getContentType())`; a literal is never null.
+4. **`audio/webm` alone breaks Safari**, which records `audio/mp4`. Either widen to OpenAI's
+   accepted set or drop the check and let the provider reject it.
+
+**Learned / decided:**
+
+- **The environment changed.** `java` on this desktop's `PATH` is now JDK 25.0.2 at
+  `C:\Program Files\Java\jdk-25.0.2`, so **no `JAVA_HOME` export is needed here** — the laptop
+  is the machine that needs it. `docs/troubleshooting.md` already covered both machines correctly;
+  `README.md` and `CLAUDE.md` still named the old JetBrains path and now defer to it instead.
+- **Stub token counts cannot be derived honestly from file size** — token count depends on what
+  was said, not how many bytes encode it. The point of non-zero values is only that the counters
+  *vary*, so `/api/v1/global/stats` can be watched working offline and a lost update in the
+  Stage 7 race test is visible. Rough basis if wanted: ~1 input token per KB of Opus audio,
+  output ≈ `text.length() / 4`.
+- **Whether the stub should sleep is a real trade-off.** A pause imitates a network call, which is
+  what makes the front end's uploading state visible and gives Stage 6 something for 200 virtual
+  threads to park on. Against it: every future test pays the cost. The middle option is a
+  configurable delay via `@ConfigurationProperties`, defaulted in `application-local.yaml` and
+  zero in tests.
+- **`fetch` does not reject on a 4xx or 5xx** — only on network failure. Without a `response.ok`
+  check the page parses an `ErrorResponse` as a transcript and displays `undefined`. This is the
+  single most likely front-end bug tomorrow.
+
+**Next:** implement Stage 3 — the three Java bodies, then `render()`, `uploadForTranscription()`
+and `onRecordButtonClick()` in `js/app.js`. Run with `.\mvnw.cmd spring-boot:run` and open
+`http://localhost:8080`; the stub means the whole loop works offline. Then Stage 4.
