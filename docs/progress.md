@@ -23,11 +23,15 @@ Entry format:
 
 | | |
 | --- | --- |
-| **Stage** | 3 scaffolded, not implemented — all bodies are `TODO(you)` markers |
-| **Next** | Stage 3 implementation, then Stage 4 (student is doing both in one sitting) |
-| **Last TITAN check** | 2026-09-05 — 4/11. All three Stage 2 targets passed. |
-| **Last worked on** | 2026-09-07 |
-| **Uncommitted work** | None — working tree clean at `07719d7`. |
+| **Stage** | 3, 4 and 5 complete. All functional requirements met. |
+| **Next** | Stage 7 — the three named tests. Then the design notes (`concurrency.md`, `security.md`, `testing.md`), then Stage 8 polish if time allows. |
+| **Last TITAN check** | 2026-09-12 — **11/11**. Every row passed. |
+| **Last worked on** | 2026-09-12 |
+| **Uncommitted work** | None — working tree clean at `fc0d626`. |
+
+**Deadline note:** assignment is due 2026-09-13. Stages 6, 8 and 9 remain, but every
+TITAN-checkable requirement is already passing; what is left is marks for tests and written
+justification, not functionality.
 
 ---
 
@@ -490,3 +494,129 @@ Recorded in the README, and the matching "open decision" entry removed.
 **Next:** implement Stage 3 — the three Java bodies, then `render()`, `uploadForTranscription()`
 and `onRecordButtonClick()` in `js/app.js`. Run with `.\mvnw.cmd spring-boot:run` and open
 `http://localhost:8080`; the stub means the whole loop works offline. Then Stage 4.
+
+## 2026-09-12 — Stages 3, 4, 5: from 4/11 to 11/11
+
+**Done:** Implemented the whole transcription path end to end and got every TITAN row passing.
+Nine commits from `d3149bc` (stub/service/controller bodies) to `fc0d626` (client selection fix).
+
+**TITAN:** five uploads. 8/11 -> 9/11 -> 9/11 -> 8/11 (deliberate, for logs) -> **11/11**.
+
+### The bug that cost four uploads
+
+`@Profile("titan")` on `OpenAiTranscriptionClient` rested on a comment written on 2026-09-07:
+"TITAN overrides this with `SPRING_PROFILES_ACTIVE=titan`". **It does not.** TITAN runs a bare
+`java -jar`, so `spring.profiles.default: local` won and the *stub* answered every transcription.
+TITAN was shown `"Transcription of recording.webm with size 55840 bytes"` and correctly reported
+it did not match the expected speech. T08 and T09 could not have passed regardless of what else
+was fixed.
+
+This was invisible because **nothing logged which client was active**. A stub-serving application
+looked identical at startup to a real one; the difference appeared only in a per-request log line
+nobody had reason to read.
+
+Two fixes, and the second matters as much as the first:
+
+1. Selection now keys on capability, not environment label — `@ConditionalOnProperty` on
+   `openai.api-key` for the real client, `@ConditionalOnMissingBean` for the stub. The launching
+   process cannot get it wrong by omission. `application-titan.yaml` and `application-local.yaml`
+   deleted; settings moved to `application.yaml`.
+2. Both clients log their identity at startup, the stub at `warn`.
+
+**The lesson worth keeping: a comment asserting a fact about an external system is a hypothesis,
+not documentation.** That one read as settled truth five days later and was never true. Facts
+about systems we do not control need a note saying how they were verified — or an explicit note
+that they were not.
+
+### Getting the logs out of TITAN
+
+TITAN prints Java stdout only on a non-zero exit. Three attempts were needed:
+
+| Attempt | Result | Why |
+| --- | --- | --- |
+| `System.exit(1)` after `applicationContext.close()` | "exited cleanly" | `exit` runs shutdown hooks and waits; the Spring hook was already running |
+| `Runtime.halt(1)` in the same position | "exited cleanly" | The log ends at "Graceful shutdown complete" — `close()` never returns before the JVM terminates, so the line after it is unreachable |
+| `Runtime.halt(1)` inside a registered shutdown hook | **exit code 1, logs dumped** | A hook runs *during* termination, the one point guaranteed to be reached |
+
+Verified locally before uploading the third time. Deliberately failing T11 for one run was an
+acceptable trade because TITAN keeps a high-water mark — a passed row cannot be un-passed.
+
+### Other bugs found and fixed
+
+**Ogg recorded, WebM claimed.** OpenAI rejected every upload with "Audio file might be corrupted
+or unsupported". The audio was valid: the file began `4F 67 67 53` ("OggS"), not the WebM magic
+`1A 45 DF A3`. Firefox had recorded Ogg/Opus while reporting an empty `mimeType`, so
+`extensionFor()` fell through to its `"webm"` default and the filename contradicted the content.
+Diagnosed by dumping the upload to disk and reading its first four bytes. Fixed by asking
+`MediaRecorder` for a specific container via `isTypeSupported` rather than accepting its choice,
+and by carrying the browser content type through to the outbound multipart part (Spring otherwise
+defaults it to `application/octet-stream` — the same contradiction from the other side).
+
+**Uptime measured from the wrong moment, twice.** Stage 1 moved from bean construction (too late)
+to JVM start (too early); TITAN polled from launch and was told 6.268s when the server had been
+answering for a fraction of a second. Now taken from `ApplicationReadyEvent` — the moment the
+server can first answer a request, which is the earliest a client could observe it. 0.131s on the
+first reachable poll. The field is `volatile` rather than `final`, since the event fires on the
+startup thread and every read is from a request thread.
+
+**`@ExceptionHandler(ServletException.class)` never matched `ResponseStatusException`.** It
+extends `ErrorResponseException` -> `NestedRuntimeException`, so an empty upload returned 500 with
+a full stack trace in the body — six fields where the schema sets `additionalProperties: false`.
+Widening the annotation was not enough on its own: the parameter was still typed
+`ServletException`, so Spring could not invoke the method and the Boot default error page answered
+instead, silently. Both the annotation and the parameter type had to change. This also closed a
+route by which an upstream exception message — which can carry the `Authorization` header — could
+have reached a response body.
+
+**`openai.request-timeout` was bound, documented, and wired to nothing.** The client ran with the
+JDK HTTP client default of no read timeout. Now applied via `HttpClientSettings` (Boot 4
+replacement for `ClientHttpRequestFactorySettings`, in the separate `spring-boot-http-client`
+module). Verified against an unroutable address: 5024ms, matching the connect timeout exactly,
+returning 502.
+
+**Uploads were 8x larger than necessary.** `{ audio: true }` with no constraints produced ~250
+kbps — 506 KB for 16 seconds. Constrained to mono, 16 kHz, 24 kbps Opus: **61 KB for the same
+recording, and 2989ms -> 1798ms**. Transcript quality unchanged (the same speech produced an
+identical 216-character transcript at both bitrates), and input tokens dropped from 307 to 174,
+so it is cheaper as well as faster. Also added a timeslice to `MediaRecorder.start()` so a long
+recording is collected incrementally rather than assembled in one blob at stop time.
+
+Both of those are rubric items in their own right — criterion 3 HD band names "audio compression,
+chunking" explicitly.
+
+### Decisions made
+
+| Decision | Chosen | Rejected, and why |
+| --- | --- | --- |
+| Stub `Thread.sleep` | Removed | Wrapping it forced `InterruptedException` onto `TranscriptionClient` — a checked exception on the interface is a contract every implementation must honour, including a real client with no reason to throw it |
+| Upload size limit | `spring.servlet.multipart.max-file-size: 25MB` | An `if` in the controller — Tomcat rejects mid-parse, before the payload is buffered and before the handler runs; the `if` fires only after the whole upload is already in memory |
+| `contentType` on `TranscriptionClient` | Added | Unlike `InterruptedException`, the media type genuinely belongs in the contract: every provider needs to know what format the audio is in |
+| Where token accounting happens | `TranscriptionService` | Inside the clients — would duplicate the call across both implementations, and entangle the stub with statistics in tests that are about transcription |
+| Missing `usage` from the provider | Log at `warn`, count zero, return the transcript | Failing the call — the transcript matters more than exact accounting, and the tokens are already spent either way |
+| Upstream failure status | 502 Bad Gateway | 500 — our server is fine, the upstream one failed, and the status code is diagnostic information |
+| Passing the upstream exception as a cause | Safe, and done | Verified rather than assumed: `GlobalExceptionHandler` logs the throwable and builds the body from literals, so no cause is ever rendered. If that changes, this decision must be revisited |
+| UPLOADING vs TRANSCRIBING states | Collapsed into one | A single `fetch` gives no signal for where one ends and the other begins; announcing a transition the page cannot observe would be a lie. `durationMs` reports the real figure afterwards |
+
+### Verified
+
+- Real transcription end to end, bare `java -jar`, no profile variable: 2004ms, real token counts.
+- No key: stub plus a `warn` that transcription is not real, clean exit 0.
+- Stats accumulate: three 5000-byte uploads moved the counters 0/0 -> 15000/4998, matching the
+  stub size-derived arithmetic including its integer truncation.
+- Error paths: empty upload 400, unknown path 404, unreachable upstream 502 — all with exactly the
+  five schema fields, no stack trace, no key.
+- Fat JAR runs standalone with all four front-end assets inside it.
+
+### Open questions and next step
+
+- **Stage 7 is the next work**, and it is the largest remaining mark opportunity: tests are named
+  in the HD band of criteria 1, 2 *and* 4. Three are required — controller regression tests against
+  the stub, a >200-concurrent-request load test, and a race-condition test on the stats counters.
+- `StatsService.recordUsage` is written specifically so the race test fails if it is ever rewritten
+  as `+=`; that test should assert exact totals from many threads.
+- The `else` branch of `GlobalExceptionHandler.handleSpringMvc` is still unproven — nothing tested
+  so far throws a bare `ServletException` without the `ErrorResponse` interface. Pin it down in
+  Stage 7 rather than assuming it works.
+- Design notes not yet written: `concurrency.md`, `security.md`, `testing.md`. Much of
+  `concurrency.md` can be lifted from comments already in `StatsService` and `ShutdownService`.
+- The personal OpenAI key used for local testing today should be revoked.
