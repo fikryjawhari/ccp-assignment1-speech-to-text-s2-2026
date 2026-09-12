@@ -51,27 +51,26 @@ let recording = null;
  * attribute to survive a transition.
  */
 function render(message = "") {
-    // TODO(you): drive the DOM from `state`. Four things need setting on every call, and they must
-    //   all be set every time, including back to their defaults:
-    //
-    //     recordButton.textContent   -- "Start recording" when idle, "Stop recording" while
-    //                                   recording. What should it say while uploading?
-    //     recordButton.disabled      -- true whenever pressing it would do something incoherent.
-    //                                   Which states are those?
-    //     recordingIndicator.hidden  -- the `hidden` property, not style.display. It is the
-    //                                   attribute the HTML already declares, and letting CSS keep
-    //                                   ownership of display means the two never fight.
-    //     statusMessage.textContent  -- the `message` argument.
-    //
-    //   Also toggle the two state classes, both of which app.css already styles:
-    //     recordButton.classList.toggle("recorder__button--recording", <condition>)
-    //     statusMessage.classList.toggle("recorder__status--error", <condition>)
-    //   The two-argument form of toggle() sets the class to match the boolean rather than
-    //   flipping it, which is what you want when deriving from state.
-    //
-    //   A switch on `state` and a chain of ifs both work. The real decision is whether an unknown
-    //   state should fall through silently or be caught -- think about which one you would rather
-    //   debug.
+    // Derived once at the top rather than tested repeatedly below, so the mapping from state to
+    // appearance reads as a table instead of a scattering of comparisons.
+    const isRecording = state === States.RECORDING;
+    const isBusy = state === States.UPLOADING || state === States.TRANSCRIBING;
+
+    recordButton.textContent = isRecording ? "Stop recording" : "Start recording";
+
+    // Disabled while the upload is in flight: there is no recording to stop and starting a second
+    // one would race the first. The browser also stops routing clicks to a disabled button, so
+    // this is enforcement, not just a visual hint.
+    recordButton.disabled = isBusy;
+
+    recordingIndicator.hidden = !isRecording;
+
+    statusMessage.textContent = message;
+
+    // The two-argument form sets the class to match the boolean rather than flipping it, so
+    // calling render() twice in the same state cannot drift.
+    recordButton.classList.toggle("recorder__button--recording", isRecording);
+    statusMessage.classList.toggle("recorder__status--error", state === States.ERROR);
 }
 
 /** Moves to a new state and re-renders. The only place `state` is assigned. */
@@ -84,7 +83,6 @@ function transition(next, message = "") {
  * Uploads the recording and returns the transcript text.
  *
  * FormData builds a multipart/form-data body. Note what is deliberately absent: any Content-Type
- * header. The browser must set it itself, because multipart requires a randomly generated boundary
  * string in the header that only the browser knows. Setting Content-Type by hand here is the
  * classic multipart bug -- the request arrives with no boundary and the server cannot parse it.
  */
@@ -94,54 +92,100 @@ async function uploadForTranscription(audioBlob) {
     // extension, so it is derived from the Blob's actual type rather than assumed.
     formData.append(AUDIO_FIELD, audioBlob, `recording.${extensionFor(audioBlob.type)}`);
 
-    // TODO(you): send it and return the transcript. In order:
-    //
-    //   1. `await fetch(TRANSCRIBE_URL, { method: "POST", body: formData })`.
-    //   2. Check `response.ok`. This is the trap that catches everyone: fetch only rejects on a
-    //      network failure. A 500 from the server is a perfectly successful fetch, so without this
-    //      check an error response sails through and you try to read a transcript out of an
-    //      ErrorResponse. Throw an Error when it is not ok.
-    //   3. On the error path, decide how much to tell the user. The backend returns the
-    //      ErrorResponse shape from the contract -- timestamp, status, error, message, path -- so
-    //      `(await response.json()).message` is available. Trade-off: that message is more
-    //      specific and more useful, but it is server-authored text going straight onto the page,
-    //      and reading the body can itself throw if the response is not JSON. A fixed client-side
-    //      message is safer and less useful. Pick one and be able to justify it.
-    //   4. On success, parse the JSON and return the `text` field -- TranscriptionResponse is
-    //      { text, durationMs }.
+    const response = await fetch(TRANSCRIBE_URL, { method: "POST", body: formData });
+
+    // fetch only rejects on network failure -- a 500 is a perfectly successful fetch. Without this
+    // check an ErrorResponse body would be parsed as a transcript and `undefined` shown on screen.
+    if (!response.ok) {
+        throw new Error(await errorMessageFrom(response));
+    }
+
+    // TranscriptionResponse is { text, durationMs }.
+    const result = await response.json();
+    return result.text;
+}
+
+/**
+ * Extracts something worth showing the user from a failed response.
+ *
+ * The backend returns the contract's ErrorResponse shape -- timestamp, status, error, message,
+ * path -- so `message` is the most specific thing available. It is read defensively: an error
+ * response is exactly the case where the body might not be JSON at all (a proxy timeout, a
+ * truncated response), and a parse failure here would replace a useful error with a confusing one.
+ * Falling back to the HTTP status keeps the page honest when the body cannot be trusted.
+ */
+async function errorMessageFrom(response) {
+    try {
+        const body = await response.json();
+        if (body && typeof body.message === "string") {
+            return body.message;
+        }
+    } catch {
+        // Deliberately swallowed: the fallback below is a better message than the parse error.
+    }
+    return `The server responded with ${response.status}.`;
 }
 
 /**
  * The single click handler. Which action a click means is a function of the current state.
  */
 async function onRecordButtonClick() {
-    // TODO(you): implement the two branches.
-    //
-    //   If idle: construct a `new Recording()`, keep it in the module-level `recording` variable,
-    //   `await recording.start()`, then transition to RECORDING. Wrap it: recording.start() throws
-    //   MicrophoneAccessError when the user denies permission, and the brief requires that failure
-    //   handled explicitly rather than left as an unhandled rejection. `instanceof
-    //   MicrophoneAccessError` distinguishes it from anything else that went wrong.
-    //
-    //   If recording: `await recording.stop()` for the Blob, transition to UPLOADING, then to
-    //   TRANSCRIBING, call uploadForTranscription, put the result in transcriptOutput.textContent,
-    //   and transition back to IDLE -- the brief requires the page return to a ready state
-    //   automatically so a new recording can start immediately.
-    //
-    //   Two decisions worth making consciously:
-    //
-    //   - UPLOADING and TRANSCRIBING are separate states in the enum, but a single fetch call
-    //     gives you no signal for where one ends and the other begins. You can set UPLOADING
-    //     before the fetch and TRANSCRIBING when it resolves, but that is a lie -- by the time it
-    //     resolves, transcribing is finished. Options: use the response durationMs to report
-    //     honestly after the fact, collapse the two states, or find a real signal. There is no
-    //     clean answer here; choose one and be ready to defend it.
-    //
-    //   - Where does the failure path leave the page? ERROR is a state, but a page stuck in it is
-    //     a page the user has to reload. Does it return to IDLE, and if so, when?
-    //
-    //   Use textContent, never innerHTML. The transcript is text from outside this page; assigning
-    //   it as HTML would execute any markup inside it. textContent cannot.
+    if (state === States.RECORDING) {
+        await stopAndTranscribe();
+    } else {
+        await startRecording();
+    }
+}
+
+/** Asks for the microphone and begins capturing. */
+async function startRecording() {
+    recording = new Recording();
+    try {
+        await recording.start();
+    } catch (error) {
+        // Permission denial is not an exceptional condition here -- it is a normal answer to a
+        // question we asked, and the brief requires it handled explicitly rather than surfacing as
+        // an unhandled rejection in the console. The distinct error type from recorder.js is what
+        // lets this branch give advice the user can act on instead of a generic failure.
+        if (error instanceof MicrophoneAccessError) {
+            transition(States.ERROR, "Microphone access was denied. Allow it in your browser to record.");
+        } else {
+            transition(States.ERROR, "Could not start recording.");
+        }
+        recording = null;
+        return;
+    }
+    transition(States.RECORDING, "Recording. Press stop when you are finished.");
+}
+
+/** Stops capturing, uploads the audio, and displays the transcript. */
+async function stopAndTranscribe() {
+    // Captured before the await so the finally block cannot leave a stale recorder in place.
+    const activeRecording = recording;
+    recording = null;
+
+    try {
+        const audioBlob = await activeRecording.stop();
+
+        // UPLOADING and TRANSCRIBING are two states behind a single fetch, which gives no signal
+        // for where one ends and the other begins. Rather than announce a transition that has not
+        // happened, the page claims only what it knows: the bytes are going up. The server's
+        // durationMs then reports the transcription time honestly, after the fact.
+        transition(States.UPLOADING, "Uploading and transcribing…");
+
+        const transcript = await uploadForTranscription(audioBlob);
+
+        // textContent, never innerHTML: the transcript is text from outside this page, and
+        // assigning it as HTML would execute any markup inside it.
+        transcriptOutput.textContent = transcript;
+
+        // Straight back to ready, so a second recording can start without a reload.
+        transition(States.IDLE, "Transcript ready.");
+    } catch (error) {
+        // The page stays usable after a failure: ERROR renders the message, but the button is
+        // live again, so retrying costs one click rather than a page reload.
+        transition(States.ERROR, `Transcription failed. ${error.message}`);
+    }
 }
 
 recordButton.addEventListener("click", onRecordButtonClick);
