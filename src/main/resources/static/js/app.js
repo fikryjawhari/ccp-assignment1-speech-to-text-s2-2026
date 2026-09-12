@@ -8,7 +8,7 @@
  * doing and one where it cannot.
  */
 
-import { Recording, MicrophoneAccessError, extensionFor } from "./recorder.js";
+import { Recording, MicrophoneAccessError, EmptyRecordingError, extensionFor } from "./recorder.js";
 
 /**
  * Where the recording is POSTed. Not part of docs/assignment1api.yaml -- this endpoint is ours,
@@ -182,6 +182,13 @@ async function stopAndTranscribe() {
         // Straight back to ready, so a second recording can start without a reload.
         transition(States.IDLE, "Transcript ready.");
     } catch (error) {
+        // An empty recording is the user's problem to fix, not a server failure, so it gets its own
+        // message rather than being reported as a failed transcription.
+        if (error instanceof EmptyRecordingError) {
+            transition(States.ERROR, "No audio was captured. Check your microphone is not muted.");
+            return;
+        }
+
         // The page stays usable after a failure: ERROR renders the message, but the button is
         // live again, so retrying costs one click rather than a page reload.
         transition(States.ERROR, `Transcription failed. ${error.message}`);

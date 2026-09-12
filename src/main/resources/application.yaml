@@ -2,14 +2,6 @@ spring:
   application:
     name: ccp-assignment1-speech-to-text
 
-  profiles:
-    # Default the profile so the application is runnable with a bare 'mvnw spring-boot:run' and,
-    # more importantly, so the packaged JAR still starts if it is launched with no environment
-    # set. TITAN overrides this with SPRING_PROFILES_ACTIVE=titan; an environment variable beats a
-    # value baked into the JAR, which is the whole reason this is safe to hardcode. Without a
-    # default there would be no TranscriptionClient bean at all and startup would fail outright.
-    default: local
-
   threads:
     virtual:
       # Serve every request on a virtual thread rather than a pooled platform thread.
@@ -58,3 +50,35 @@ server:
   # torn down at once and every in-flight request is severed mid-response -- including, on a bad
   # day, the 202 acknowledging the shutdown itself.
   shutdown: graceful
+
+# Settings for the OpenAI transcriptions API, bound by OpenAiProperties.
+#
+# These live in the shared file rather than in a profile-specific one because there is no longer a
+# profile that selects the real client. Which client runs is decided by whether api-key resolves to
+# anything: OpenAiTranscriptionClient carries @ConditionalOnProperty on it, and
+# StubTranscriptionClient fills in when that bean is absent.
+#
+# This replaced an application-titan.yaml selected by SPRING_PROFILES_ACTIVE=titan, on the
+# assumption the marking platform set that variable. It does not -- its own log showed the
+# application falling back to the "local" default and serving canned transcripts. Behaviour now
+# depends only on whether a key was supplied, which is something the launching environment cannot
+# get wrong by omission.
+openai:
+  # Deliberately no value: the key comes from the OPENAI_API_KEY environment variable through
+  # Spring's relaxed binding (underscores to hyphens, case-insensitive). Writing it here would put
+  # it in the JAR and in git history -- the exact failure the rubric names. With no key set, the
+  # condition above fails, the stub takes over, and the application still runs offline.
+
+  base-url: https://api.openai.com/v1/audio/transcriptions
+
+  # Must be a token-billed model. whisper-1 reports usage as {type: "duration", seconds} with no
+  # token counts at all, which cannot satisfy /api/v1/global/stats -- the contract asks for
+  # inputTokens and outputTokens specifically. The gpt-4o-transcribe family reports
+  # {type: "tokens", input_tokens, output_tokens}. See docs/plan.md "Model constraint".
+  model: gpt-4o-mini-transcribe
+
+  # The upstream half of the brief's five-second budget. Set longer than the budget rather than
+  # shorter: a call that would have succeeded at six seconds is worth more than a strictly enforced
+  # client-side deadline, since the user sees an error either way. It exists mainly so a hung
+  # connection cannot hold a request thread indefinitely.
+  request-timeout: 20s

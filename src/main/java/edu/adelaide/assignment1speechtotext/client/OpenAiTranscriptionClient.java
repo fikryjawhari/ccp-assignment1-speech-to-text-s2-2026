@@ -1,9 +1,12 @@
 package edu.adelaide.assignment1speechtotext.client;
 
 import edu.adelaide.assignment1speechtotext.config.OpenAiProperties;
+import java.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.annotation.Profile;
+import org.springframework.boot.http.client.ClientHttpRequestFactoryBuilder;
+import org.springframework.boot.http.client.HttpClientSettings;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -21,8 +24,16 @@ import org.springframework.web.server.ResponseStatusException;
  * Sends audio to OpenAI's transcriptions API and returns the transcript.
  *
  * <p>The counterpart to {@code StubTranscriptionClient}: same interface, real network. Spring
- * activates exactly one of them by profile, so nothing upstream of this class contains a branch on
- * which provider is in use.
+ * activates exactly one of them, so nothing upstream of this class contains a branch on which
+ * provider is in use.
+ *
+ * <p><strong>Selected by the presence of an API key, not by a profile name.</strong> This bean was
+ * originally {@code @Profile("titan")} on the assumption that the marking platform would launch the
+ * JAR with {@code SPRING_PROFILES_ACTIVE=titan}. It does not: its log on 2026-09-12 read "No active
+ * profile set, falling back to 1 default profile: local", so the stub answered every transcription
+ * and the platform was shown canned text for three consecutive submissions. An environment the
+ * application cannot control is the wrong thing to key behaviour on; the API key is the thing that
+ * actually determines whether real transcription is possible, so it is what decides.
  *
  * <p><strong>Why {@link RestClient}.</strong> It is Spring's synchronous HTTP client, introduced in
  * Spring 6.1 to replace {@code RestTemplate}. Blocking is deliberate here, not a compromise: each
@@ -39,10 +50,20 @@ import org.springframework.web.server.ResponseStatusException;
  * this class authored.
  */
 @Component
-@Profile("titan")
+@ConditionalOnProperty(prefix = "openai", name = "api-key")
 public class OpenAiTranscriptionClient implements TranscriptionClient {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAiTranscriptionClient.class);
+
+    /**
+     * How long to wait for the TCP and TLS connection to OpenAI.
+     *
+     * <p>Not configurable, unlike the read timeout: establishing a connection either works quickly
+     * or indicates the provider is unreachable, and no deployment of this application has a reason
+     * to want a different value. A constant that never varies is clearer than a property nobody
+     * ever sets.
+     */
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
 
     private final RestClient restClient;
     private final OpenAiProperties properties;
@@ -59,13 +80,47 @@ public class OpenAiTranscriptionClient implements TranscriptionClient {
      * <p>The {@code Authorization} header is set once as a default header. Setting it here rather
      * than per-request means no call site can forget it, and the key appears in exactly one place
      * in the codebase.
+     *
+     * <p><strong>The timeouts are applied to a request factory, not to the builder.</strong>
+     * {@code openai.request-timeout} was bound and documented from the start but never actually
+     * used, so the client ran with the JDK HTTP client's default of no read timeout at all -- a
+     * hung upstream would have held a request until the connection died on its own. Configuration
+     * that looks live but is wired to nothing is worse than no configuration, because it stops
+     * anyone from looking for the real setting.
+     *
+     * <p>Two separate timeouts, because they fail differently. The connect timeout bounds
+     * establishing the TCP and TLS connection: if OpenAI is unreachable that should be discovered
+     * in seconds, not minutes, so it is deliberately short. The read timeout bounds waiting for the
+     * response once the request is sent, and must be generous -- transcription genuinely takes
+     * time, and cutting off a call that was about to succeed wastes tokens already spent.
+     *
+     * <p>{@link HttpClientSettings} is Spring Boot 4's replacement for the
+     * {@code ClientHttpRequestFactorySettings} of Boot 3, and lives in the separate
+     * {@code spring-boot-http-client} module. {@code detect()} chooses the underlying HTTP library
+     * from what is on the classpath -- here the JDK's own {@code java.net.http} client, since no
+     * other is declared -- so the timeouts apply whichever implementation is in use.
      */
     public OpenAiTranscriptionClient(RestClient.Builder builder, OpenAiProperties properties) {
         this.properties = properties;
+
+        HttpClientSettings settings = HttpClientSettings.defaults()
+                .withConnectTimeout(CONNECT_TIMEOUT)
+                .withReadTimeout(properties.requestTimeout());
+
         this.restClient = builder
                 .baseUrl(properties.baseUrl())
                 .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + properties.apiKey())
+                .requestFactory(ClientHttpRequestFactoryBuilder.detect().build(settings))
                 .build();
+
+        // Say which client won, at startup, where it cannot be missed.
+        //
+        // Nothing previously announced the choice, so an application serving canned stub
+        // transcripts looked identical at startup to one doing real transcription -- the
+        // difference only appeared in a per-request log line, buried among others, and only if
+        // someone thought to look. That silence cost four submissions. The model and endpoint are
+        // logged with it; the key never is.
+        log.info("Real transcription enabled: model {} at {}", properties.model(), properties.baseUrl());
     }
 
     /**

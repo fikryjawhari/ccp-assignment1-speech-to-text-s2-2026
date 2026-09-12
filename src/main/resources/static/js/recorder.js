@@ -25,6 +25,63 @@ export class MicrophoneAccessError extends Error {
 }
 
 /**
+ * How often MediaRecorder should hand over a chunk of encoded audio, in milliseconds.
+ *
+ * One second is a compromise: short enough that a long recording is collected incrementally rather
+ * than assembled in one piece at stop time, long enough that the event does not fire often enough
+ * to matter. The value is not sent anywhere and does not affect the resulting audio -- concatenating
+ * the chunks reproduces the same stream either way.
+ */
+const CHUNK_INTERVAL_MS = 1000;
+
+/**
+ * What to ask the microphone for.
+ *
+ * Every value here exists to make the upload smaller, which is the only client-side cost this
+ * application can control: the recording has to cross the network before transcription can even
+ * begin, and that transfer sits inside the five-second budget the brief sets.
+ *
+ * Mono because speech carries no stereo information worth keeping, and a second channel is a
+ * second channel of bytes. 16 kHz because speech energy lives below 8 kHz and the Nyquist limit
+ * makes anything above that sample rate redundant -- it is also the rate speech recognition models
+ * are trained at, so the downsampling loses nothing the provider would have used. The noise and
+ * echo processing is the browser's own, applied before encoding, and a cleaner signal compresses
+ * better as well as transcribing better.
+ *
+ * These are requests, not guarantees: a browser that cannot honour one ignores it rather than
+ * failing, which is why none of them can break recording on a device that does not comply.
+ */
+const AUDIO_CONSTRAINTS = {
+    channelCount: 1,
+    sampleRate: 16000,
+    noiseSuppression: true,
+    echoCancellation: true,
+};
+
+/**
+ * Target bitrate for the encoded audio.
+ *
+ * Opus is designed for speech and stays intelligible far below what music needs; 24 kbps mono is a
+ * widely used setting for voice and is well above the point where transcription accuracy suffers.
+ * Left unset, MediaRecorder picked roughly 250 kbps, making a sixteen-second recording about
+ * 500 KB -- ten times larger than it needs to be, all of it network time inside the latency budget.
+ */
+const AUDIO_BITS_PER_SECOND = 24000;
+
+/**
+ * Thrown when a recording finished with no audio data in it.
+ *
+ * Distinct from MicrophoneAccessError: permission was granted and the recorder ran, but nothing
+ * came out of it. The user-facing advice is different, so the type is different.
+ */
+export class EmptyRecordingError extends Error {
+    constructor() {
+        super("The recording contained no audio.");
+        this.name = "EmptyRecordingError";
+    }
+}
+
+/**
  * Captures a single recording from the microphone.
  *
  * One instance is one recording: start() then stop(), not reused. That is deliberate -- a recorder
@@ -45,7 +102,7 @@ export class Recording {
         try {
             // Prompts the user on first use; the browser remembers the answer per origin. Resolves
             // with a MediaStream -- a live handle on the microphone, not audio data.
-            this.#stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            this.#stream = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS });
         } catch (error) {
             // getUserMedia rejects with NotAllowedError (denied) or NotFoundError (no device).
             // Both mean the same thing to the user, so they collapse into one error type.
@@ -62,8 +119,8 @@ export class Recording {
         // name. Observed 2026-09-12; the file began "OggS" rather than the WebM magic 1A 45 DF A3.
         const mimeType = supportedMimeType();
         this.#mediaRecorder = mimeType
-            ? new MediaRecorder(this.#stream, { mimeType })
-            : new MediaRecorder(this.#stream);
+            ? new MediaRecorder(this.#stream, { mimeType, audioBitsPerSecond: AUDIO_BITS_PER_SECOND })
+            : new MediaRecorder(this.#stream, { audioBitsPerSecond: AUDIO_BITS_PER_SECOND });
 
         // Chunks arrive as the recording runs. Collect them; they are only useful concatenated.
         this.#mediaRecorder.addEventListener("dataavailable", (event) => {
@@ -72,7 +129,13 @@ export class Recording {
             }
         });
 
-        this.#mediaRecorder.start();
+        // The timeslice matters for long recordings. Called with no argument, MediaRecorder buffers
+        // the entire recording internally and emits it as a single "dataavailable" just before
+        // "stop" -- fine for a three-second clip, but it means a sixteen-second one exists only as
+        // one large blob assembled at the last moment. Passing a timeslice makes chunks arrive
+        // every second during the recording, so the data is already collected by the time stop is
+        // called and there is nothing left to flush.
+        this.#mediaRecorder.start(CHUNK_INTERVAL_MS);
     }
 
     /**
@@ -81,16 +144,28 @@ export class Recording {
      * @returns {Promise<Blob>} the encoded recording, in whatever container the browser chose.
      */
     stop() {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
             this.#mediaRecorder.addEventListener("stop", () => {
                 // Release the microphone. Without this the browser's recording indicator stays lit
                 // and the device is held open -- a real bug users notice immediately.
                 this.#stream.getTracks().forEach((track) => track.stop());
 
-                // mimeType is whatever the browser actually picked: audio/webm on Chrome and
-                // Firefox, audio/mp4 on Safari. It is carried onto the Blob rather than hardcoded,
-                // so the backend is told the truth about what it is being sent.
-                resolve(new Blob(this.#chunks, { type: this.#mediaRecorder.mimeType }));
+                // mimeType is whatever the browser actually picked. It is carried onto the Blob
+                // rather than hardcoded, so the backend is told the truth about what it is being
+                // sent -- and since start() asked for a specific container, this is now the type we
+                // requested rather than a surprise.
+                const blob = new Blob(this.#chunks, { type: this.#mediaRecorder.mimeType });
+
+                // An empty recording means no audio was captured at all -- a muted or absent input
+                // device, most often. Uploading it wastes a provider call that can only come back
+                // with an empty transcript, and the resulting blank panel looks identical to a
+                // transcription that silently failed. Failing here names the real cause instead.
+                if (blob.size === 0) {
+                    reject(new EmptyRecordingError());
+                    return;
+                }
+
+                resolve(blob);
             }, { once: true });
 
             this.#mediaRecorder.stop();
