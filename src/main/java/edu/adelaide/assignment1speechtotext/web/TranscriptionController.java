@@ -3,11 +3,14 @@ package edu.adelaide.assignment1speechtotext.web;
 import edu.adelaide.assignment1speechtotext.dto.TranscriptionResponse;
 import edu.adelaide.assignment1speechtotext.service.TranscriptionService;
 import java.io.IOException;
+
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Accepts a browser recording and returns its transcript.
@@ -48,29 +51,9 @@ public class TranscriptionController {
      */
     @PostMapping("/transcriptions")
     public TranscriptionResponse transcribe(@RequestParam("audio") MultipartFile audio) throws IOException {
-        // TODO(you): decide and implement the validation policy, then delegate.
-        //
-        //   The service assumes it is handed something worth sending upstream. What counts as
-        //   "worth sending" is a real decision, and every option has a cost:
-        //
-        //   - Empty upload (audio.isEmpty()). A zero-byte part is always a client mistake, and
-        //     forwarding it wastes an upstream call that will fail anyway. Cheapest check there is.
-        //   - Size ceiling. OpenAI rejects anything over 25 MB, so a larger upload cannot succeed;
-        //     rejecting it here saves the bandwidth. But a hard-coded number in a controller is
-        //     exactly the "hardcoded environment difference" CLAUDE.md warns about -- if you want a
-        //     limit, Spring already has spring.servlet.multipart.max-file-size in application.yaml,
-        //     which rejects it before your code is even reached. Prefer configuration to an if.
-        //   - Content type. You could insist on audio/webm. It is the format the page sends, but
-        //     browsers differ (Safari records mp4), so being strict here breaks a browser you have
-        //     not tested rather than protecting anything. Consider whether this check earns its place.
-        //
-        //   How to reject: throw an exception carrying the status you mean rather than building an
-        //   ErrorResponse yourself. ResponseStatusException(HttpStatus.BAD_REQUEST, "...") implements
-        //   Spring's ErrorResponse interface and extends ServletException, so the handler you already
-        //   wrote formats it correctly with no new code. Never write an error body in a controller --
-        //   CLAUDE.md forbids hand-rolled per-controller error shapes.
-        //
-        //   Then: return transcriptionService.transcribe(audio);
-        return null;
+        if (audio.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No file uploaded");
+        }
+        return transcriptionService.transcribe(audio);
     }
 }

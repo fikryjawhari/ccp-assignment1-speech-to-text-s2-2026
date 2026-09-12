@@ -37,25 +37,10 @@ public class StubTranscriptionClient implements TranscriptionClient {
      */
     @Override
     public TranscriptionResult transcribe(byte[] audio, String filename) {
-        // TODO(you): log that a stub transcription was served, including the filename and the
-        //   payload size in bytes -- never the payload itself. Use log.info with {} placeholders
-        //   (SLF4J substitutes them only if the level is enabled, which is why you never build the
-        //   string with + yourself).
-
-        // TODO(you): return a TranscriptionResult. Three decisions, all yours:
-        //   1. What text? A fixed sentence is simplest. A transcript that echoes something real
-        //      about the upload (its size, its filename) proves end to end that the bytes actually
-        //      arrived, which a constant string cannot. Downside: it is not a plausible transcript,
-        //      so it reads oddly on screen.
-        //   2. What token counts? They feed StatsService from Stage 5, so returning 0, 0 makes the
-        //      stats endpoint permanently zero locally and you can never see it work. Non-zero
-        //      values let you exercise the counters offline. Deriving them from the payload size
-        //      makes them vary between requests the way real ones do.
-        //   3. Should it pause? A real call takes a second or two. A stub returning instantly
-        //      hides latency bugs and makes the front end's "transcribing" state flash past
-        //      unseen. Thread.sleep on a virtual thread is cheap, but a sleeping stub also slows
-        //      every future test that uses it. There is a real trade-off here; pick a side and be
-        //      ready to say why.
-        return null;
+        log.info("Stub transcription served for filename: {}, payload size: {}", filename, audio.length);
+        return new TranscriptionResult(
+                "Transcription of " + filename + " with size " + audio.length + " bytes",
+                audio.length,
+                audio.length / 3);
     }
 }

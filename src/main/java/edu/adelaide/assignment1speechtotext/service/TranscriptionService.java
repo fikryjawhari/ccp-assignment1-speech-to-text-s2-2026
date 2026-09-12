@@ -44,25 +44,10 @@ public class TranscriptionService {
      * @throws java.io.IOException if the upload cannot be read
      */
     public TranscriptionResponse transcribe(MultipartFile audio) throws java.io.IOException {
-        // TODO(you): record a start time. System.nanoTime() is the right clock for measuring an
-        //   elapsed interval -- Instant.now() tracks wall-clock time, which can jump backwards if
-        //   the system clock is corrected mid-request. nanoTime has no meaning as a date; it is
-        //   only ever valid as a difference between two readings.
-
-        // TODO(you): call the client. audio.getBytes() gives the payload; audio.getOriginalFilename()
-        //   gives the browser-supplied name. Both come from the request, so neither is trustworthy
-        //   as a path -- pass them along, never open a file with them.
-
-        // TODO(you): compute the elapsed time in milliseconds. The trap: nanoTime differences are
-        //   long nanoseconds, and dividing by 1_000_000 in integer arithmetic truncates. Here that
-        //   is fine because the field is long ms, but check you have the right number of zeros --
-        //   this is the same class of mistake as the toMillis()/1000 one from Stage 1.
-
-        // TODO(you): log the outcome -- the transcript length and the duration, not the transcript
-        //   itself. CLAUDE.md requires every provider call logged with start, outcome, duration and
-        //   token usage, and Stage 7 asserts against this line's shape.
-
-        // TODO(you): return a TranscriptionResponse built from the result text and the elapsed ms.
-        return null;
+        long startTime = System.nanoTime();
+        TranscriptionResult result = transcriptionClient.transcribe(audio.getBytes(), audio.getOriginalFilename());
+        long elapsedTime = (System.nanoTime() - startTime) / 1_000_000;
+        log.info("Transcription completed for file '{}'. Transcript length: {}, Duration: {} ms", audio.getOriginalFilename(), result.text().length(), elapsedTime);
+        return new TranscriptionResponse(result.text(), elapsedTime);
     }
 }
