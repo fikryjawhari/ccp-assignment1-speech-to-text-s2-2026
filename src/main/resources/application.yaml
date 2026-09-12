@@ -24,6 +24,28 @@ spring:
       # Requires Java 21+; this project targets Java 25 (see <java.version> in pom.xml).
       enabled: true
 
+  servlet:
+    multipart:
+      # Bound the upload at the edge, before our code runs.
+      #
+      # Boot's default is 1MB, which silently rejects a recording of roughly half a minute -- the
+      # exact clip length the brief's latency budget describes, so the default is not merely
+      # conservative here, it is wrong for this application. 25MB matches the ceiling the OpenAI
+      # transcriptions API enforces, so anything this lets through is something the provider will
+      # at least accept; a larger upload cannot succeed and there is no value in carrying it.
+      #
+      # Configured rather than checked in the controller on purpose. Tomcat enforces this while
+      # parsing the multipart stream and rejects an oversize body before the handler method is
+      # entered, so the payload is never fully buffered. An `if` in the controller could only fire
+      # after the whole upload was already in memory -- it would reject the request without saving
+      # any of the cost, and would hardcode an environment limit in Java where CLAUDE.md requires
+      # configuration.
+      max-file-size: 25MB
+      # max-file-size caps one part; this caps the whole multipart body. Ours carries a single part,
+      # so the two are effectively the same bound today -- set explicitly because leaving it at the
+      # 10MB default would make the request-level limit, not the file-level one, the real ceiling.
+      max-request-size: 25MB
+
   lifecycle:
     # How long the shutdown sequence waits for in-flight requests before forcing beans to close.
     # Boot's default is 30s; a transcription of a sub-minute clip must display within 5s (see the
