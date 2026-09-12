@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.ErrorResponseException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -39,8 +40,8 @@ public class GlobalExceptionHandler {
      * server fault instead of a 404. Spring selects the most specific handler for the thrown type, so this one wins over
      * the catch-all without any ordering being declared.
      */
-    @ExceptionHandler(ServletException.class)
-    public ResponseEntity<ErrorResponse> handleSpringMvc(ServletException exception, HttpServletRequest request) throws ServletException {
+    @ExceptionHandler({ServletException.class, ErrorResponseException.class})
+    public ResponseEntity<ErrorResponse> handleSpringMvc(Exception exception, HttpServletRequest request) throws Exception {
         if (exception instanceof org.springframework.web.ErrorResponse errorResponse) {
             String path = request.getRequestURI();
             int statusCode = errorResponse.getStatusCode().value();
