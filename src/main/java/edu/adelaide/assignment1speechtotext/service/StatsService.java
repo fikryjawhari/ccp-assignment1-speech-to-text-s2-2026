@@ -35,4 +35,30 @@ public class StatsService {
     public GlobalStatsResponse currentStats() {
         return new GlobalStatsResponse(inputTokens.get(), outputTokens.get());
     }
+
+    /**
+     * Adds one transcription's token usage to the running totals.
+     *
+     * <p>Called once per successful transcription, from many request threads at once.
+     * {@code addAndGet} is a single atomic read-modify-write; the plain {@code counter += n} it
+     * replaces is three separate steps, and two threads interleaving those steps lose an update
+     * silently. Stage 7's race-condition test drives this method from many threads and asserts the
+     * totals are exact, which is a test that fails reliably if this is ever written as {@code +=}.
+     *
+     * <p>The two counters are updated independently rather than under a shared lock. Nothing in the
+     * contract relates them, so a reader landing between the two updates sees a skew that is not
+     * observable as an inconsistency -- and taking a lock here would block a virtual thread's
+     * carrier, which is the one cost this application's threading model exists to avoid.
+     *
+     * <p>The return value of {@code addAndGet} is deliberately discarded: the new total is of no
+     * use at the call site, and reading it back with a separate {@code get()} would be the classic
+     * way to reintroduce the race this method avoids.
+     *
+     * @param inputTokensUsed  input tokens the provider charged for one call
+     * @param outputTokensUsed output tokens the provider produced for one call
+     */
+    public void recordUsage(long inputTokensUsed, long outputTokensUsed) {
+        inputTokens.addAndGet(inputTokensUsed);
+        outputTokens.addAndGet(outputTokensUsed);
+    }
 }

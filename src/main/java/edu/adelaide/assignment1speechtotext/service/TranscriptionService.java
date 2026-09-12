@@ -26,9 +26,11 @@ public class TranscriptionService {
     private static final Logger log = LoggerFactory.getLogger(TranscriptionService.class);
 
     private final TranscriptionClient transcriptionClient;
+    private final StatsService statsService;
 
-    public TranscriptionService(TranscriptionClient transcriptionClient) {
+    public TranscriptionService(TranscriptionClient transcriptionClient, StatsService statsService) {
         this.transcriptionClient = transcriptionClient;
+        this.statsService = statsService;
     }
 
     /**
@@ -47,6 +49,20 @@ public class TranscriptionService {
         long startTime = System.nanoTime();
         TranscriptionResult result = transcriptionClient.transcribe(audio.getBytes(), audio.getOriginalFilename(), audio.getContentType());
         long elapsedTime = (System.nanoTime() - startTime) / 1_000_000;
+
+        // Accounting belongs here rather than inside the client. A client adapter's job is turning
+        // audio into a transcript by speaking one provider's protocol; server-wide totals are not
+        // part of that, and putting the call in the clients would duplicate it across both
+        // implementations -- miss it in one and the stats are wrong only under that profile.
+        // TranscriptionResult carries the counts across the boundary precisely so this layer can do
+        // the bookkeeping.
+        //
+        // Only a successful transcription is counted: a failed call throws out of the line above,
+        // so this is never reached for one. That matches what the counters claim to report, though
+        // it does mean tokens spent on a call that failed after the provider charged for it go
+        // unrecorded -- unavoidable, since a failed call never tells us what it cost.
+        statsService.recordUsage(result.inputTokens(), result.outputTokens());
+
         log.info("Transcription completed for file '{}'. Transcript length: {}, Duration: {} ms", audio.getOriginalFilename(), result.text().length(), elapsedTime);
         return new TranscriptionResponse(result.text(), elapsedTime);
     }
