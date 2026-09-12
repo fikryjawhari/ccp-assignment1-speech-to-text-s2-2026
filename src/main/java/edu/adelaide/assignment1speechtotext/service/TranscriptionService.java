@@ -45,7 +45,7 @@ public class TranscriptionService {
      */
     public TranscriptionResponse transcribe(MultipartFile audio) throws java.io.IOException {
         long startTime = System.nanoTime();
-        TranscriptionResult result = transcriptionClient.transcribe(audio.getBytes(), audio.getOriginalFilename());
+        TranscriptionResult result = transcriptionClient.transcribe(audio.getBytes(), audio.getOriginalFilename(), audio.getContentType());
         long elapsedTime = (System.nanoTime() - startTime) / 1_000_000;
         log.info("Transcription completed for file '{}'. Transcript length: {}, Duration: {} ms", audio.getOriginalFilename(), result.text().length(), elapsedTime);
         return new TranscriptionResponse(result.text(), elapsedTime);

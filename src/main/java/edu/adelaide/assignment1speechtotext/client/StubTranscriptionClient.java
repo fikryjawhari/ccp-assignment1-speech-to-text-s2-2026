@@ -36,8 +36,8 @@ public class StubTranscriptionClient implements TranscriptionClient {
      * shape of this line is asserted on by later tests, so keep it stable.
      */
     @Override
-    public TranscriptionResult transcribe(byte[] audio, String filename) {
-        log.info("Stub transcription served for filename: {}, payload size: {}", filename, audio.length);
+    public TranscriptionResult transcribe(byte[] audio, String filename, String contentType) {
+        log.info("Stub transcription served for filename: {}, payload size: {}, contentType: {}", filename, audio.length, contentType);
         return new TranscriptionResult(
                 "Transcription of " + filename + " with size " + audio.length + " bytes",
                 audio.length,

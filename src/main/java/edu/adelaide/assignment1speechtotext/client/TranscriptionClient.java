@@ -21,10 +21,14 @@ public interface TranscriptionClient {
     /**
      * Transcribes one complete audio recording.
      *
-     * @param audio    the raw encoded audio bytes, exactly as the browser recorded them
-     * @param filename the original upload filename; providers use its extension to infer the
-     *                 container format, so it is passed through rather than discarded
+     * @param audio       the raw encoded audio bytes, exactly as the browser recorded them
+     * @param filename    the original upload filename; providers use its extension to infer the
+     *                    container format, so it is passed through rather than discarded
+     * @param contentType the media type the browser reported for the recording, or null if it
+     *                    reported none. Sent alongside the filename because a provider that
+     *                    disagrees with itself -- an .webm name on an octet-stream part -- may
+     *                    reject a perfectly valid recording
      * @return the transcript text and the token usage reported by the provider
      */
-    TranscriptionResult transcribe(byte[] audio, String filename);
+    TranscriptionResult transcribe(byte[] audio, String filename, String contentType);
 }

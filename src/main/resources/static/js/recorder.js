@@ -52,7 +52,18 @@ export class Recording {
             throw new MicrophoneAccessError(error);
         }
 
-        this.#mediaRecorder = new MediaRecorder(this.#stream);
+        // Ask for a specific container rather than accepting whatever the browser picks.
+        //
+        // This is not a preference, it is a correctness requirement. The upload is named from its
+        // MIME type and the provider infers the container from that name, so we have to KNOW the
+        // format, not guess it. Left to itself, Firefox records Ogg/Opus while reporting an empty
+        // mimeType, which was sent as "recording.webm" and rejected by OpenAI with "Audio file
+        // might be corrupted or unsupported" -- the bytes were a valid Ogg stream wearing the wrong
+        // name. Observed 2026-09-12; the file began "OggS" rather than the WebM magic 1A 45 DF A3.
+        const mimeType = supportedMimeType();
+        this.#mediaRecorder = mimeType
+            ? new MediaRecorder(this.#stream, { mimeType })
+            : new MediaRecorder(this.#stream);
 
         // Chunks arrive as the recording runs. Collect them; they are only useful concatenated.
         this.#mediaRecorder.addEventListener("dataavailable", (event) => {
@@ -85,6 +96,30 @@ export class Recording {
             this.#mediaRecorder.stop();
         });
     }
+}
+
+/**
+ * Picks the first container this browser can record that the transcription provider accepts.
+ *
+ * Ordered by preference, not by popularity: WebM/Opus first because Chrome and Firefox both
+ * produce it and it is the most compact of the three, then Ogg/Opus which Firefox prefers, then
+ * mp4 which is all Safari offers. Every entry is on OpenAI's accepted list (mp3, mp4, mpeg, mpga,
+ * m4a, wav, webm) or is a container it decodes -- there is no point recording a format that will
+ * be rejected after the upload has already been paid for.
+ *
+ * Returns undefined when the browser supports none of them, in which case the caller lets
+ * MediaRecorder choose and we fall back to whatever it reports. That path is a last resort, and it
+ * is the one that produced the mislabelled Ogg file described in start().
+ *
+ * isTypeSupported is itself absent on very old browsers, hence the optional-call guard.
+ */
+function supportedMimeType() {
+    const candidates = [
+        "audio/webm;codecs=opus",
+        "audio/ogg;codecs=opus",
+        "audio/mp4",
+    ];
+    return candidates.find((type) => MediaRecorder.isTypeSupported?.(type));
 }
 
 /**
