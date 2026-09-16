@@ -24,10 +24,10 @@ Entry format:
 | | |
 | --- | --- |
 | **Stage** | All stages complete. Functional requirements met, all three rubric-named tests exist, docs current. |
-| **Next** | Final TITAN check with `target/assignment1-speech-to-text.jar`, then push, then zip **including `.git/`** and submit. |
+| **Next** | Re-check TITAN with the rebuilt JAR (T01 fix), then push, then zip **including `.git/`** and submit. |
 | **Last TITAN check** | 2026-09-12 — **11/11**. Every row passed. |
 | **Last worked on** | 2026-09-16 |
-| **Uncommitted work** | None — working tree clean at `f7e7fe3`. |
+| **Uncommitted work** | None — working tree clean at `7836320`. |
 
 **Deadline note:** assignment is due tonight. Every TITAN-checkable requirement passes, all three
 rubric-named tests exist and are verified by mutation, and the three design notes are written.
@@ -800,3 +800,81 @@ excluded but `.git/` kept.
 ### Next step
 
 Final TITAN upload with this JAR, then push, then package and submit.
+
+---
+
+## 2026-09-16 (later still) — T01 fails a third time: the startup window
+
+**TITAN:** 10/11. **T01 [NO]** — first call to `/api/v1/admin/uptime` returned **500**. T10, the
+last call to the same endpoint, passed. Everything else passed, including the full record →
+transcribe → display flow and graceful shutdown.
+
+**Cause.** That asymmetry is the whole diagnosis. `utcServerStart` is assigned by the
+`ApplicationReadyEvent` listener, which fires only once the context refresh has *returned* — but
+Tomcat starts accepting connections *during* that refresh. A request landing in the gap read a null
+field, and `Duration.between(null, x)` throws `NullPointerException`, which the catch-all handler
+turns into a 500. By the time of the last call the field was set, so T10 passed.
+
+TITAN polls from the instant it launches the JAR and retries on connection refusal, which makes it
+close to a worst-case client for this window. The five `... awaiting connection` lines in its output
+are it landing in exactly that gap. Manual curl testing never sees it — the earlier standalone
+verification ran seconds after startup and passed cleanly.
+
+**Fix.** Read the volatile field once into a local, fall back to `utcNow` when null:
+
+```java
+Instant utcNow = Instant.now();
+Instant start = utcServerStart;
+if (start == null) {
+    start = utcNow;
+}
+double serverUptimeSeconds = Duration.between(start, utcNow).toMillis() / 1000.0;
+return new UptimeResponse(start, utcNow, serverUptimeSeconds);
+```
+
+Uptime reports 0.0 in the window, which is true rather than a placeholder — a server answering its
+first request has been answerable for approximately no time. Returning 503 would be more literally
+honest but the contract defines no 503 for this endpoint and TITAN checks status codes verbatim.
+
+The single read also closed a latent inconsistency nobody had noticed: the method read the volatile
+field **twice**, so the ready event firing between those two reads would produce a response whose
+`serverUptimeSeconds` was computed from one value while `utcServerStart` reported another.
+
+### Why this field has now failed three times
+
+| Attempt | Moment chosen | Why it failed |
+| --- | --- | --- |
+| 1 | Bean construction | Too late — after the thing being measured |
+| 2 | JVM start | Too early — TITAN was told 6.268s when the server had answered for a fraction of one |
+| 3 | `ApplicationReadyEvent` | **Right moment, but nothing defined what happens before it arrives** |
+
+Attempts 1 and 2 were about picking the correct instant, and attempt 3 got that right — the Javadoc
+reasoning still stands. The third failure was a different bug living in the same field: an
+**uninitialised-state bug**, not a wrong-moment bug.
+
+**The question that would have caught it, and was never asked:** *every field not assigned in the
+constructor has a window where it holds its default value — is the code that reads it reachable
+during that window?* For `utcServerStart` the answer was yes.
+
+`volatile` actively obscured this. It signals "threading has been thought about", but it only solves
+**visibility** (do other threads see the write?) and says nothing about **ordering** (can a read
+happen before any write?). Moving a field off `final` trades away the language guarantee that it
+cannot be observed before assignment, and that debt has to be paid explicitly.
+
+**Checked:** `utcServerStart` is the *only* non-final field in the entire application. Every other
+field is `final` or `static final`, so this is the one place the bug class could occur — the
+`private final` convention has been doing its job everywhere else.
+
+### Verified
+
+- `UptimeServiceTest` — 4 tests. Constructing the service without firing the ready event reproduces
+  the window exactly. Mutation-verified: reverting to the direct field reads fails with
+  `NullPointerException ... because "startInclusive" is null`, the precise exception behind the 500.
+- Full suite: **64 tests, 0 failures**.
+- Against the rebuilt JAR, polling from launch as TITAN does: **HTTP 200 on the first attempt**,
+  `serverUptimeSeconds: 0.036`. After 10s: 10.743, and 10.743 = 25.684 − 14.940, so the three fields
+  agree. Shutdown 202, graceful, exit 0.
+
+### Next step
+
+Re-upload to TITAN for 11/11, then push, then package.
