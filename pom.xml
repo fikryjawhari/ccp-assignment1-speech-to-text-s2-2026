@@ -71,6 +71,15 @@
     </dependencies>
 
     <build>
+        <!--
+          The name of the built JAR, without the version suffix Maven adds by default.
+
+          The deliverable is a single executable fat JAR uploaded to the marking platform, where
+          "assignment1-speech-to-text-0.0.1-SNAPSHOT.jar" reads as a build artefact rather than a
+          submission. finalName changes only the output filename; the groupId, artifactId and
+          version above are untouched, so the project's Maven coordinates stay conventional.
+        -->
+        <finalName>assignment1-speech-to-text</finalName>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
