@@ -6,7 +6,7 @@ Every test here runs offline. None contacts OpenAI, none requires an API key, an
 one. That is a hard constraint of the assignment, not a convenience: a suite that needs a live key
 cannot be run by a marker, and a suite that embeds a fake one is a fail condition in its own right.
 
-Run the whole suite with `./mvnw test` (PowerShell: `.\mvnw.cmd test`). Current state: **56 tests,
+Run the whole suite with `./mvnw test` (PowerShell: `.\mvnw.cmd test`). Current state: **60 tests,
 all passing, under 5 seconds**.
 
 ---
@@ -173,7 +173,52 @@ concurrency — which is a caution about load tests generally, not just this one
 
 ---
 
-## 4. `CcpAssignment1SpeechToTextApplicationTests` — context loads
+## 4. `TranscriptionLoggingTest` — the log lines have a contract
+
+`src/test/java/.../service/TranscriptionLoggingTest.java`
+
+**Why it exists.** The rubric's code-quality criterion asks that the logging approach be used by the
+regression tests, and this project's convention requires every outbound STT call to be logged with a
+stable shape. A log line nothing asserts on has no contract: it can be reworded, broken, or silently
+stop firing, and nothing notices.
+
+**What it proves.**
+
+| Test | Asserts |
+| --- | --- |
+| `successfulTranscriptionIsLogged` | exactly one INFO line per transcription, carrying filename, transcript length and duration |
+| `stubAnnouncesItselfAtStartup` | the stub warns at WARN that transcription is not real |
+| `stubLogsSizeNotBytes` | the payload size appears; the payload itself never does |
+| `transcriptionLoggingLeaksNothingKeyShaped` | no line contains `sk-`, `authorization`, `bearer`, or `api-key` |
+
+**How the capture works.** Logback allows an appender to be attached to a logger at runtime.
+`ListAppender` collects events in memory rather than writing them to the console. It is detached
+again in `@AfterEach` — leaving it attached would leak captured events into other tests sharing the
+JVM.
+
+**Why substrings rather than whole messages.** Pinning the exact message string would fail on every
+harmless rewording, which trains people to delete the assertion instead of fixing the code. What is
+asserted is what the line must *carry* — level, filename, interpolated values — not how it is
+phrased. `getFormattedMessage()` is used deliberately: it resolves the `{}` placeholders, so a line
+that logged its template unfilled would pass a check against `getMessage()` and fail here.
+
+**Why "exactly one" line.** A duplicate would mean the call was retried or the method entered twice
+— a real defect that a "contains at least one" assertion would miss.
+
+**Expected result.** 4/4 pass.
+
+**Mutation evidence.** Deleting the completion `log.info(...)` from `TranscriptionService` fails
+`successfulTranscriptionIsLogged`, confirming the assertion is live and that the line actually fires
+on the transcription path.
+
+**A note on the key-shaped test.** It cannot fail today — the stub has no key at all. It is a
+regression guard rather than a current proof: it fails if a future change starts logging credentials
+or whole request objects on the transcription path, which is the hard constraint most easily broken
+by accident. Documented as such rather than presented as stronger evidence than it is.
+
+---
+
+## 5. `CcpAssignment1SpeechToTextApplicationTests` — context loads
 
 The Spring Boot default. It asserts that the application context starts: every bean is constructible,
 every dependency resolvable, every `@ConfigurationProperties` binding valid. Cheap, and it fails
