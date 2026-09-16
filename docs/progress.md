@@ -23,11 +23,11 @@ Entry format:
 
 | | |
 | --- | --- |
-| **Stage** | 3, 4, 5 and 7 complete. All functional requirements met; all three rubric-named tests exist. |
-| **Next** | Re-check the JAR on TITAN (the test work touched no production behaviour, but verify). Then Stage 8 polish if time allows. |
+| **Stage** | All stages complete. Functional requirements met, all three rubric-named tests exist, docs current. |
+| **Next** | Final TITAN check with `target/assignment1-speech-to-text.jar`, then push, then zip **including `.git/`** and submit. |
 | **Last TITAN check** | 2026-09-12 — **11/11**. Every row passed. |
 | **Last worked on** | 2026-09-16 |
-| **Uncommitted work** | None — working tree clean at `dfb09f0`. |
+| **Uncommitted work** | None — working tree clean at `f7e7fe3`. |
 
 **Deadline note:** assignment is due tonight. Every TITAN-checkable requirement passes, all three
 rubric-named tests exist and are verified by mutation, and the three design notes are written.
@@ -727,3 +727,76 @@ external system. Worth a sweep before any submission.
   in the application throws a `ServletException` that does not also implement `ErrorResponse`, so it
   is a safety net rather than a live path. Recorded in `testing.md` under "What is not tested, and
   why" rather than left as an unexplained gap.
+
+---
+
+## 2026-09-16 (later) — Submission prep: JAR rename and documentation pass
+
+**Done:** Everything needed to submit. No production behaviour changed.
+
+**JAR naming.** `<finalName>assignment1-speech-to-text</finalName>` in `pom.xml` drops the version
+suffix, so the deliverable is `target/assignment1-speech-to-text.jar` rather than
+`...-0.0.1-SNAPSHOT.jar`. Only the output filename changes; groupId, artifactId and version are
+untouched, so the Maven coordinates stay conventional.
+
+**Verified standalone** from a scratch directory containing nothing but the JAR:
+
+| Check | Result |
+| --- | --- |
+| Startup | 1.326s, no profile variable set |
+| `index.html` + all three front-end assets | 200, served from inside the archive |
+| `GET /api/v1/admin/uptime` | 200, correct RFC 3339 and double |
+| `GET /api/v1/global/stats` | 200, accumulates correctly (5000 in / 1666 out after one 5000-byte upload — matches the stub's integer truncation) |
+| `POST /api/v1/transcriptions` | 200 with transcript; 400 on empty upload |
+| Unknown path | 404 with exactly the five `ErrorResponse` fields |
+| `POST /api/v1/admin/shutdown` | 202, graceful shutdown, **exit 0** |
+
+One false alarm worth recording: the first standalone run failed with "Port 8080 was already in
+use" — an app instance was already running locally, not a JAR fault. Re-ran on `--server.port=18080`
+and everything passed.
+
+**Documentation pass.** The README had six stale sections, the worst being a Configuration table
+still documenting `SPRING_PROFILES_ACTIVE` and the `local`/`titan` profiles — the exact mechanism
+deleted in Stage 5, and the source of the bug that cost four uploads. A reader following it would
+have been actively misled. Also fixed: "These do not exist yet" under Design notes (all three
+exist), the versioned JAR in the build command, tests described as future work, and token
+accounting listed under "Open decisions".
+
+**Source comment pass.** Four comments described work as pending that had since landed — "Stage 4
+swaps the client behind TranscriptionService", "Stage 5 feeds into StatsService", "upstream
+failures in later stages", "Stage 8 adds the accessibility work". Each now describes what the code
+does, and where relevant names the test that holds it to that. One typo fixed (`independant`).
+
+**This is the third sweep this project has needed for the same defect class: a comment asserting
+something that has stopped being true.** First the `SPRING_PROFILES_ACTIVE` assumption, then the
+javadoc forward-references, now the README. Worth a `grep` for stage numbers and future tense
+before any future submission.
+
+**New: `docs/advanced-topics.md`.** The brief's three questions, marked "not assessed" but named in
+this plan's Stage 9 as reflection the code-quality rubric rewards — how to modify the YAML for
+per-user statistics, how to distinguish users, and what is wrong with exposing
+`/api/v1/admin/shutdown`. The third is a direct security critique of an endpoint in this
+submission: it is an unauthenticated denial-of-service vector, implemented as specified because the
+contract is machine-tested, with the objection recorded rather than pretended away.
+
+**Front-end accessibility, checked rather than assumed.** The Stage 8 items turned out to be
+largely done already: semantic `<button>`, `role="status"`, `aria-live="polite"`, `:focus-visible`
+outline, `prefers-reduced-motion`, `disabled` during in-flight work, and `textContent` rather than
+`innerHTML` for the transcript (XSS-safe by construction). The comment claiming Stage 8 would add
+this work was the only thing out of date.
+
+### Packaging note — important
+
+The submission zip **must contain `.git/`**, since the commit history is how originality is
+assessed. That rules out `git archive`, which exports tracked files *without* the repository. The
+zip must be made from a clone or a copy of the working directory with `target/` and `.idea/`
+excluded but `.git/` kept.
+
+### Verified
+
+- `./mvnw clean package` — 60 tests, 0 failures, JAR built.
+- Working tree clean at `f7e7fe3`.
+
+### Next step
+
+Final TITAN upload with this JAR, then push, then package and submit.
