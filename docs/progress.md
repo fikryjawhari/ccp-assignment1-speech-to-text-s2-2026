@@ -24,10 +24,10 @@ Entry format:
 | | |
 | --- | --- |
 | **Stage** | All stages complete. Functional requirements met, all three rubric-named tests exist, docs current. |
-| **Next** | Re-check TITAN with the rebuilt JAR (T01 fix), then push, then zip **including `.git/`** and submit. |
-| **Last TITAN check** | 2026-09-12 — **11/11**. Every row passed. |
+| **Next** | Push, then zip **including `.git/`** and submit. Nothing outstanding in the code. |
+| **Last TITAN check** | 2026-09-16 — **11/11** after the T01 fix. Every row passed. |
 | **Last worked on** | 2026-09-16 |
-| **Uncommitted work** | None — working tree clean at `7836320`. |
+| **Uncommitted work** | None. |
 
 **Deadline note:** assignment is due tonight. Every TITAN-checkable requirement passes, all three
 rubric-named tests exist and are verified by mutation, and the three design notes are written.
@@ -878,3 +878,32 @@ field is `final` or `static final`, so this is the one place the bug class could
 ### Next step
 
 Re-upload to TITAN for 11/11, then push, then package.
+
+---
+
+## 2026-09-16 (final) — TITAN 11/11, submission
+
+**TITAN:** **11/11** with the rebuilt JAR carrying the T01 fix. T01 now passes on the first call to
+`/api/v1/admin/uptime`; every other row held.
+
+This is the run the submitted JAR corresponds to. Sequence from here: push, package, submit.
+
+**Final state**
+
+| | |
+| --- | --- |
+| Tests | 64, all passing, under 5 seconds |
+| Commits | 55 |
+| Deliverable | `target/assignment1-speech-to-text.jar`, 23.8MB |
+| TITAN | 11/11 |
+
+**Packaging constraint worth remembering:** the zip must contain `.git/`, because the commit history
+is how originality is assessed. `git archive` cannot be used — it exports tracked files without the
+repository. `Compress-Archive` was tried and **corrupted the repository**: the zip looked correct
+from outside (right size, `.git/` present, 111 entries) but extracting it gave
+`error: Could not read 20ece62...` with only 6 of 52 commits traversable, and every source file
+showed as modified from line-ending mangling. `git clone` reconstructs a valid repository by design
+rather than copying bytes, so that is the route to use.
+
+**Always extract the finished zip somewhere fresh and run `git log --oneline | wc -l` before
+submitting.** The corruption was invisible until the history was actually read.
