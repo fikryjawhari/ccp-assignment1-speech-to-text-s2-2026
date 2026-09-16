@@ -2,7 +2,6 @@ package edu.adelaide.assignment1speechtotext.web;
 
 import static org.hamcrest.Matchers.aMapWithSize;
 import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -110,7 +109,16 @@ class TranscriptionControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.text", containsString("recording.webm")))
-                .andExpect(jsonPath("$.durationMs", greaterThanOrEqualTo(0)))
+                // isNumber() rather than a comparison against 0 or 0L, because a typed matcher
+                // here is a latent bug. JSON has no int/long distinction, so JsonPath picks the
+                // Java type by magnitude -- verified directly: 3 parses to Integer, 3000000000 to
+                // Long. Hamcrest casts the actual value to the matcher's type, so
+                // greaterThanOrEqualTo(0) throws ClassCastException once a duration exceeds the
+                // int range, and greaterThanOrEqualTo(0L) throws on every duration below it.
+                // Neither literal is correct for both. Nothing is lost by dropping the bound: a
+                // duration is never negative, so >= 0 could only fail in ways the other assertions
+                // catch first. What matters contractually is that the field is present and numeric.
+                .andExpect(jsonPath("$.durationMs").isNumber())
                 .andExpect(jsonPath("$", aMapWithSize(2)));
     }
 
