@@ -47,8 +47,9 @@ public class StubTranscriptionClient implements TranscriptionClient {
     /**
      * Returns a canned transcript.
      *
-     * <p>Log sizes, never bytes -- the audio payload has no business in the log output, and the
-     * shape of this line is asserted on by later tests, so keep it stable.
+     * <p>Log sizes, never bytes -- the audio payload has no business in the log output. The shape
+     * of this line is asserted on by {@code TranscriptionLoggingTest}, so keep it stable: that test
+     * checks the payload size appears and the payload itself does not.
      */
     @Override
     public TranscriptionResult transcribe(byte[] audio, String filename, String contentType) {

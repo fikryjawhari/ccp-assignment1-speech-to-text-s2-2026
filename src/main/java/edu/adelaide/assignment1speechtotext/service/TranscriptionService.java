@@ -13,7 +13,8 @@ import org.springframework.web.multipart.MultipartFile;
  *
  * <p>Its reason to exist is that the controller must stay thin. The controller's job is HTTP --
  * bind the request, choose a status code, hand back a body. Deciding what a transcription *is*
- * belongs here, which is also what lets Stage 7 test this logic without standing up a web server.
+ * belongs here, which is also what lets {@code TranscriptionLoggingTest} exercise this logic without
+ * standing up a web server.
  *
  * <p>The declared field type is the {@link TranscriptionClient} interface, never a concrete class.
  * At startup Spring finds the single implementation active for the current profile and passes it

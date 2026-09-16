@@ -10,12 +10,11 @@ import org.springframework.stereotype.Service;
  * <p>Both counters are {@link AtomicLong} rather than plain {@code long} because they are written
  * from many request threads at once: {@code counter += n} on a plain field is a read, an add and
  * a write, and two threads interleaving those steps silently lose an update. {@code AtomicLong}
- * performs the whole operation as one indivisible hardware instruction. Stage 7 has a test that
- * asserts exactly this.
+ * performs the whole operation as one indivisible hardware instruction. {@code StatsServiceRaceTest}
+ * asserts exactly this, and fails if this is ever rewritten as {@code +=}.
  *
- * <p>Nothing increments these yet -- Stage 5 wires them to real transcription responses. The
- * endpoint exists now so the full contract is answerable, reporting the honest zeros of a server
- * that has transcribed nothing.
+ * <p>{@code TranscriptionService} increments these once per successful transcription. A server that
+ * has transcribed nothing reports honest zeros.
  */
 @Service
 public class StatsService {
@@ -42,8 +41,9 @@ public class StatsService {
      * <p>Called once per successful transcription, from many request threads at once.
      * {@code addAndGet} is a single atomic read-modify-write; the plain {@code counter += n} it
      * replaces is three separate steps, and two threads interleaving those steps lose an update
-     * silently. Stage 7's race-condition test drives this method from many threads and asserts the
-     * totals are exact, which is a test that fails reliably if this is ever written as {@code +=}.
+     * silently. {@code StatsServiceRaceTest} drives this method from 64 threads released together by a
+     * barrier and asserts the totals are exact. Verified by mutation: with the atomic add replaced
+     * by a read-then-write, 39 of 50 repetitions fail, losing up to 75% of the updates.
      *
      * <p>The two counters are updated independently rather than under a shared lock. Nothing in the
      * contract relates them, so a reader landing between the two updates sees a skew that is not

@@ -10,11 +10,19 @@ package edu.adelaide.assignment1speechtotext.client;
  * it. That makes this an abstraction earning its place rather than a pattern applied for its own
  * sake.
  *
- * <p>Two implementations are planned: {@code StubTranscriptionClient} (bound to the {@code local}
- * profile, canned transcripts, no network) and {@code OpenAiTranscriptionClient} (Stage 4, bound
- * to {@code titan}). Spring picks one at startup by profile and injects it wherever a
- * {@code TranscriptionClient} is required -- neither the service nor the controller ever names a
- * concrete class.
+ * <p>Two implementations exist, and which one runs is decided by whether an API key was supplied,
+ * not by an environment label. {@code OpenAiTranscriptionClient} carries
+ * {@code @ConditionalOnProperty} on {@code openai.api-key}, so it is registered only when a key
+ * resolves; {@code StubTranscriptionClient} carries {@code @ConditionalOnMissingBean} and fills in
+ * otherwise, serving canned transcripts with no network access. Exactly one is in the context
+ * either way, so injection stays unambiguous, and neither the service nor the controller ever names
+ * a concrete class.
+ *
+ * <p>This replaced selection by {@code @Profile}, which assumed the marking platform set
+ * {@code SPRING_PROFILES_ACTIVE}. It does not -- the platform ran a bare {@code java -jar}, the
+ * default profile won, and the stub silently answered every request while the application looked
+ * healthy. Conditioning on the key itself removes an assumption the launching environment could get
+ * wrong by omission.
  */
 public interface TranscriptionClient {
 
