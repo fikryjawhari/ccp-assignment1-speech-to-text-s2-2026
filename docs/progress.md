@@ -23,15 +23,14 @@ Entry format:
 
 | | |
 | --- | --- |
-| **Stage** | 3, 4 and 5 complete. All functional requirements met. |
-| **Next** | Stage 7 — the three named tests. Then the design notes (`concurrency.md`, `security.md`, `testing.md`), then Stage 8 polish if time allows. |
+| **Stage** | 3, 4, 5 and 7 complete. All functional requirements met; all three rubric-named tests exist. |
+| **Next** | Re-check the JAR on TITAN (the test work touched no production behaviour, but verify). Then Stage 8 polish if time allows. |
 | **Last TITAN check** | 2026-09-12 — **11/11**. Every row passed. |
-| **Last worked on** | 2026-09-12 |
-| **Uncommitted work** | None — working tree clean at `fc0d626`. |
+| **Last worked on** | 2026-09-16 |
+| **Uncommitted work** | None — working tree clean at `dfb09f0`. |
 
-**Deadline note:** assignment is due 2026-09-13. Stages 6, 8 and 9 remain, but every
-TITAN-checkable requirement is already passing; what is left is marks for tests and written
-justification, not functionality.
+**Deadline note:** assignment is due tonight. Every TITAN-checkable requirement passes, all three
+rubric-named tests exist and are verified by mutation, and the three design notes are written.
 
 ---
 
@@ -620,3 +619,111 @@ chunking" explicitly.
 - Design notes not yet written: `concurrency.md`, `security.md`, `testing.md`. Much of
   `concurrency.md` can be lifted from comments already in `StatsService` and `ShutdownService`.
 - The personal OpenAI key used for local testing today should be revoked.
+
+---
+
+## 2026-09-16 — Stage 7: the three named tests, plus design notes
+
+**Done:** The test suite went from one `contextLoads()` to **60 tests**, and the three design notes
+were written. Six commits, each a coherent step.
+
+| Commit | What |
+| --- | --- |
+| `006df4b` | `StatsServiceRaceTest` — race conditions on the counters |
+| `9846021` | `TranscriptionControllerTest` — controller regression tests against the stub |
+| `268ae7a` | `durationMs` assertion fixed (`isNumber()` rather than a typed zero) |
+| `de09ca2` | `ConcurrentLoadTest` — 250 simultaneous requests |
+| `20ece62` | Two comments pointing at the deleted `application-titan.yaml` |
+| `2687628` | `testing.md`, `concurrency.md`, `security.md` |
+| `b581eb7` | `TranscriptionLoggingTest` — the log lines get a contract |
+| `dfb09f0` | Stale javadoc forward-references replaced with the tests that now exist |
+
+Details of each test — why it exists, what it proves, expected result — are in
+[`testing.md`](testing.md) rather than repeated here.
+
+### Every test was verified by mutation
+
+The rule adopted this session: **a passing test proves nothing until it has been seen to fail.**
+Each test had the production code it guards deliberately broken, was confirmed red, and the code
+restored.
+
+| Test | Mutation | Result |
+| --- | --- | --- |
+| `StatsServiceRaceTest` | `addAndGet(n)` → `set(get() + n)` | 39/50 repetitions fail; totals as low as 112,308 of 448,000 |
+| `TranscriptionControllerTest` | `aMapWithSize(2)` → `aMapWithSize(99999)` | fails, `map size was <2>` |
+| `ConcurrentLoadTest` | virtual threads off, Tomcat pool 20 | fails; peak concurrency collapses 250 → exactly 20 |
+| `TranscriptionLoggingTest` | delete the completion `log.info` | fails |
+
+**This was not ceremony — it caught two tests that passed while asserting nothing.** The first had
+an empty method body. The second constructed Hamcrest matchers as bare statements without attaching
+them to a request, so all five "assertions" built objects and discarded them. Both reported green.
+Neither was visible in the output. That is the justification for the rule.
+
+### Load test result
+
+`250 requests, 557ms total, peak 250 concurrent`, against a sequential floor of 50 seconds.
+
+**The finding worth keeping:** with virtual threads disabled and the pool capped at 20, the test
+still met the 5-second timing bound — 250 requests at 200ms through 20 threads is about 2.5s. Only
+the peak-concurrency assertion caught the regression. **A load test asserting only on elapsed time
+would have silently blessed a server with an eighth of the required concurrency.** That is why the
+stub tracks peak in-flight requests directly rather than inferring overlap from the clock.
+
+### Decisions made
+
+| Decision | Chosen | Rejected, and why |
+| --- | --- | --- |
+| Race test structure | Barrier + 50 repetitions | Barrier alone — 11 of 50 repetitions passed with broken code, so a single run had a ~22% chance of missing a real bug. Repetition is coverage, not a retry for flakiness |
+| Stub for controller tests | The production `StubTranscriptionClient` | A Mockito mock — it would assert only that the controller called *something*; the real stub derives its transcript from the upload, so the assertion carries information |
+| Load test transport | Real Tomcat on `RANDOM_PORT` | `MockMvc` — it dispatches on the calling thread, so 250 "concurrent" calls would be 250 sequential ones |
+| Load test client threads | Platform | Virtual — with virtual threads on both ends it would be ambiguous which side the concurrency came from |
+| Timing bound | 5s against a 50s sequential floor | A tight bound — a flaky test gets ignored, which defeats its purpose |
+| `durationMs` assertion | `isNumber()` | `greaterThanOrEqualTo(0)` *and* `(0L)` — **neither is correct**. JsonPath picks Integer or Long by magnitude and Hamcrest casts the actual to the matcher's type, so each literal throws `ClassCastException` on the range the other handles |
+| Log assertions | Substrings + level | Exact message strings — they fail on harmless rewording, which trains people to delete the assertion rather than fix the code |
+
+### Java/Spring traps hit
+
+- **Boot 4 moved test packages.** `@WebMvcTest` is `boot.webmvc.test.autoconfigure` (not
+  `boot.test.autoconfigure.web.servlet`), `@TestConfiguration` is `boot.test.context` (not
+  `context.annotation`), `@LocalServerPort` is `boot.test.web.server`. All three were wrong on the
+  first attempt from Boot 3 memory. Resolved by reading the jars directly with `jar tf` — ground
+  truth beats recall when the training data is saturated with the previous major version.
+- **`ExecutorService.submit()` swallows exceptions into the `Future`.** A thread that throws dies
+  silently unless `get()` is called. Both concurrency tests call it on every future for exactly this
+  reason.
+- **Matchers are objects, not assertions.** `status().isOk()` on its own line constructs a
+  `ResultMatcher` and discards it. Only `.andExpect(...)` applies one.
+- **A green run after a failed compile tests the previous build.** One intermediate conclusion this
+  session was wrong because of this — always confirm `BUILD SUCCESS` alongside `Tests run`.
+
+### Stale comments found and fixed
+
+Four comments described things that were no longer true — two pointing at the deleted
+`application-titan.yaml`, one claiming tests asserted on a log line before those tests existed, and
+`TranscriptionClient`'s javadoc still describing selection by `@Profile` with `local`/`titan`
+profiles, a mechanism replaced in Stage 5.
+
+This is the same failure mode as the bug that cost four TITAN uploads — a comment asserting a fact
+that has since stopped being true — aimed inward at the repository's own files rather than at an
+external system. Worth a sweep before any submission.
+
+### Verified
+
+- `./mvnw test` — **60 tests, 0 failures**, under 5 seconds.
+- `./mvnw clean package` — fat JAR builds, 23.8MB.
+- `grep -rn "sk-" src/` — only the test assertions checking a key never appears in a response.
+- `git log -p --all | grep -c "sk-[a-zA-Z0-9]{20}"` — **0**. No key was ever committed.
+- Front end contains no `api-key`, `Authorization` or `Bearer`; the only "OpenAI" mentions are two
+  comments in `recorder.js`.
+
+### Open questions and next step
+
+- **Re-check the JAR on TITAN.** No production behaviour changed this session — the only `src/main`
+  edits were comments — but the run is cheap and 11/11 should be confirmed against the submitted
+  artefact.
+- **The personal OpenAI key from 2026-09-12 still needs revoking.** Carried over from the last
+  session; do it after the final TITAN check.
+- `GlobalExceptionHandler`'s bare-`ServletException` branch remains unreached by any test. Nothing
+  in the application throws a `ServletException` that does not also implement `ErrorResponse`, so it
+  is a safety net rather than a live path. Recorded in `testing.md` under "What is not tested, and
+  why" rather than left as an unexplained gap.
