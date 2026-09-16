@@ -21,9 +21,22 @@ import org.springframework.stereotype.Service;
  *
  * <p>The honest answer is neither: the server started when it could first answer a request.
  * {@link ApplicationReadyEvent} is Spring's signal for exactly that moment -- published once the
- * context is refreshed and the web server is accepting connections. Since TITAN cannot connect
- * before that event fires, no client can ever observe an uptime that predates its own first
- * possible request.
+ * context is refreshed and the web server is accepting connections.
+ *
+ * <p><strong>The claim that no client can connect before that event fires was wrong, and it failed
+ * T01 a third time on 2026-09-16 with a 500.</strong> Tomcat begins accepting connections partway
+ * through the context refresh, while {@code ApplicationReadyEvent} is published only once that
+ * refresh has returned. Between those two moments the endpoint is reachable and the field below is
+ * still null, so {@code Duration.between(null, ...)} threw {@code NullPointerException}. TITAN
+ * polls from the instant it launches the JAR and retries on connection refusal, which makes it
+ * close to a worst-case client for exactly this window; a human with curl never sees it.
+ *
+ * <p>The general lesson is not about time at all. <strong>Any field not assigned in the constructor
+ * has a window where it holds its default value, and code reachable during that window must define
+ * what happens.</strong> Moving this field from {@code final} to {@code volatile} traded away the
+ * language guarantee that a field cannot be observed before its constructor sets it; {@code
+ * volatile} restores visibility but says nothing about ordering. The first two failures were about
+ * choosing the right moment. This one was about the window before that moment arrives.
  */
 @Service
 public class UptimeService {
@@ -66,7 +79,12 @@ public class UptimeService {
      */
     public UptimeResponse currentUptime() {
         Instant utcNow = Instant.now();
-        double serverUptimeSeconds = Duration.between(utcServerStart, utcNow).toMillis() / 1000.0;
-        return new UptimeResponse(utcServerStart, utcNow, serverUptimeSeconds);
+        Instant start = utcServerStart;
+
+        if (start == null) {
+            start = utcNow;
+        }
+        double serverUptimeSeconds = Duration.between(start, utcNow).toMillis() / 1000.0;
+        return new UptimeResponse(start, utcNow, serverUptimeSeconds);
     }
 }
