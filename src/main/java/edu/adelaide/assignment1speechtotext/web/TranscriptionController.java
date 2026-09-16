@@ -23,8 +23,9 @@ import org.springframework.web.server.ResponseStatusException;
  * without changing the content type. The {@code /api/v1} prefix and the plural noun follow the
  * conventions the supplied contract already sets.
  *
- * <p>Nothing here knows the transcript comes from a stub. Stage 4 swaps the client behind
- * {@code TranscriptionService} and this class does not change.
+ * <p>Nothing here knows whether the transcript came from a stub or from OpenAI. The client behind
+ * {@code TranscriptionService} is chosen at startup by whether an API key was supplied, and this
+ * class is identical either way -- which is what lets the controller tests run against the stub.
  */
 @RestController
 @RequestMapping("/api/v1")

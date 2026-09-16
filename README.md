@@ -64,8 +64,8 @@ Schemas are `additionalProperties: false` — do not add extra fields to respons
   Java process. Requests waiting on the upstream OpenAI call must not block each other.
 - **Secret safety.** The API key arrives as the `OPENAI_API_KEY` environment variable. It must
   never reach the browser, an API client, source code, or logs. Read it at runtime only.
-- **Configuration.** Differences between local and TITAN runs go through Spring profiles and
-  environment variables — never commented-out code.
+- **Configuration.** Differences between local and TITAN runs go through environment variables and
+  conditional bean registration — never commented-out code, never a hardcoded environment.
 - **Packaging.** A single executable fat JAR.
 - **Engineering practice.** Clear package structure, standard style and commenting,
   constructor-based dependency injection, and an incremental commit history.
@@ -85,10 +85,12 @@ Two things are worth reading off the rubric early, because they shape the design
 being bolted on at the end:
 
 - **Tests are the difference between Distinction and High Distinction in three of the four
-  criteria.** Specifically required: controller regression tests backed by a *stub STT service*,
-  a test simulating **>200 simultaneous blocking HTTP requests** with no significant delay or
-  crash, and at least one test that surfaces race conditions. The STT client therefore needs to
-  be an interface that can be swapped for a stub in tests — design for that from the first commit.
+  criteria.** Three are named specifically, and all three exist — see
+  [`docs/testing.md`](docs/testing.md): controller regression tests backed by a *stub STT service*,
+  a test driving **>200 simultaneous blocking HTTP requests** with no significant delay or crash
+  (measured: 250 requests, 557ms, peak 250 concurrent), and a race-condition test on the shared
+  statistics counters. This is why the STT client is an interface from the first commit rather
+  than an abstraction added later.
 - **Comments and docs are graded on "why", not "what".** The rubric asks for justification of
   architecture choices, deployment pitfalls, and concurrency reasoning, either in comments or in
   repository markdown. Design notes go in `docs/`; see [Design notes](#design-notes).
@@ -99,15 +101,18 @@ integration (criterion 1), and any logging, printing, or persisting of the API t
 
 ### Design notes
 
-The rubric rewards written justification of design decisions. As each area is implemented, a
-short note goes in `docs/`:
+The rubric rewards written justification of design decisions. Three notes in `docs/`:
 
-- `docs/concurrency.md` — threading model, why it was chosen, where shared state lives and how
-  races are prevented, and what the load test proves.
-- `docs/security.md` — how `OPENAI_API_KEY` is acquired, held, and kept out of logs and responses.
-- `docs/testing.md` — what each regression test exists to prove and the expected result.
-
-These do not exist yet.
+- [`docs/concurrency.md`](docs/concurrency.md) — why Spring MVC on virtual threads rather than
+  WebFlux, where shared state lives and how races are prevented, and the deployment pitfall the
+  load test reproduces.
+- [`docs/security.md`](docs/security.md) — how `OPENAI_API_KEY` is acquired, held, and kept out of
+  logs and responses; the five layers protecting it and the residual risks that remain.
+- [`docs/testing.md`](docs/testing.md) — what each regression test exists to prove, the expected
+  result, and the mutation evidence that it fails when the thing it guards is broken.
+- [`docs/advanced-topics.md`](docs/advanced-topics.md) — the brief's three unassessed questions:
+  per-user statistics, distinguishing users, and why exposing `/api/v1/admin/shutdown` is a bad
+  idea.
 
 ## Tech stack
 
@@ -149,7 +154,7 @@ first; if it already reports 25 or higher, the wrapper works as-is.
 
 # Build the executable fat JAR (the TITAN deliverable)
 ./mvnw clean package
-java -jar target/assignment1-speech-to-text-0.0.1-SNAPSHOT.jar
+java -jar target/assignment1-speech-to-text.jar
 ```
 
 On Windows PowerShell, use `.\mvnw.cmd` in place of `./mvnw`.
@@ -161,17 +166,27 @@ The app serves at http://localhost:8080/. If a build misbehaves, check
 
 | Variable | Purpose |
 | --- | --- |
-| `OPENAI_API_KEY` | Bearer token for the OpenAI transcriptions API. Supplied by TITAN at runtime. Required in the `titan` profile. |
-| `SPRING_PROFILES_ACTIVE` | `local` for development, unset/`titan` in the marking environment. |
+| `OPENAI_API_KEY` | Bearer token for the OpenAI transcriptions API. Supplied by TITAN at runtime. Its presence alone selects the real client. |
 
-**There is no local API key** — the token only exists on TITAN. The `local` profile therefore
-binds a stub implementation of the STT client that returns canned text, so the whole app runs
-and is testable offline. Real transcription is verified by uploading the JAR to TITAN.
+**Which STT client runs is decided by whether a key was supplied, not by a profile.**
+`OpenAiTranscriptionClient` carries `@ConditionalOnProperty` on `openai.api-key`, so it is
+registered only when a key resolves; `StubTranscriptionClient` carries
+`@ConditionalOnMissingBean` and fills in otherwise, serving canned transcripts with no network
+access. Exactly one is in the context either way. Both log their identity at startup — the stub
+at `warn` — so a process serving canned transcripts can never be mistaken for one doing real work.
 
-This is not a workaround, it is the design the rubric asks for: the stub seam is required for
-the controller regression tests regardless. If a key ever does become available locally, supply
-it through the shell environment or an IDE run configuration — **never commit it**, and never
-put it in `application.yaml`.
+This replaced selection by `@Profile("titan")`, which assumed the marking platform set
+`SPRING_PROFILES_ACTIVE`. **It does not** — TITAN runs a bare `java -jar`, so the default profile
+won and the stub silently answered every request while the application looked healthy. That cost
+four submissions. Conditioning on the key removes an assumption the launching environment could
+get wrong by omission; there are no longer any profile-specific configuration files.
+
+**There is no local API key** — the token only exists on TITAN, so the application runs fully
+offline against the stub and real transcription is verified by uploading the JAR. This is not a
+workaround but the design the rubric asks for: the stub seam is required for the controller
+regression tests regardless. If a key ever does become available locally, supply it through the
+shell environment or an IDE run configuration — **never commit it**, and never put it in
+`application.yaml`.
 
 ## Project layout
 
@@ -184,6 +199,9 @@ docs/assignment-brief.md                              Verbatim assignment brief
 docs/assignment1api.yaml                              OpenAPI contract for the admin/stats API
 docs/rubric.md                                        Marking rubric
 docs/plan.md, docs/progress.md                        Build plan and running progress log
+docs/concurrency.md, docs/security.md                 Design notes: threading model, secret handling
+docs/testing.md                                       What each test proves and its expected result
+docs/advanced-topics.md                               The brief's three unassessed questions
 docs/troubleshooting.md                               Environment quirks and their fixes
 CLAUDE.md                                             Conventions for AI-assisted work
 ```
@@ -196,11 +214,13 @@ The work is broken into nine stages, each ending in a TITAN check. See
 [`docs/plan.md`](docs/plan.md) for the full breakdown and
 [`docs/progress.md`](docs/progress.md) for the running log of what is actually done.
 
-## Open decisions
+## Settled decisions
 
-- **Token accounting.** Whether the transcriptions API returns usage data for the chosen model,
-  and what to count if it does not. Settled in Stage 5 — verify early, it constrains the model
-  choice.
+- **Token accounting.** `gpt-4o-mini-transcribe` reports `{type: "tokens", input_tokens,
+  output_tokens}`, which `TranscriptionService` accumulates into `StatsService` once per
+  successful transcription. If a response ever arrives without a `usage` object the call is logged
+  at `warn`, counted as zero, and the transcript still returned — the transcript matters more than
+  exact accounting, and the tokens are spent either way.
 
 ## Assignment admin
 

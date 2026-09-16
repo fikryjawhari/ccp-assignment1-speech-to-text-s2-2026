@@ -27,6 +27,12 @@ inside `target/*.jar` does not exist as far as the automated checks are concerne
 Stages 1–5 build the required functionality. Stages 6–9 are what lift the result from Pass/Credit
 to Distinction/High Distinction, and each maps to a named rubric row.
 
+**Status as of 2026-09-16:** stages 1–7 complete, and the Stage 8 and 9 items are done as part of
+the work they belong to rather than as separate stages — the front-end accessibility and
+client-side optimisation landed with the front end itself, and the Stage 9 documentation pass is
+in [`progress.md`](progress.md). See it for what is actually done; this file is the plan, not the
+record.
+
 ---
 
 ## Stage 1 — Skeleton: static page + one endpoint

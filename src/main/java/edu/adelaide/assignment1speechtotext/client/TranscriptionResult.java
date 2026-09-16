@@ -5,8 +5,8 @@ package edu.adelaide.assignment1speechtotext.client;
  *
  * <p>Deliberately not in {@code dto}: that package holds records serialised straight to the wire,
  * and this one is not. It is the client layer's internal vocabulary, carrying token counts that
- * Stage 5 feeds into {@code StatsService} but that never appear in the transcription response
- * body. Keeping it here means the client can report usage without the web layer having to
+ * {@code TranscriptionService} feeds into {@code StatsService} but that never appear in the
+ * transcription response body. Keeping it here means the client can report usage without the web layer having to
  * strip fields the contract forbids.
  *
  * <p>Token counts are {@code long} to match {@code GlobalStatsResponse}, whose schema types both

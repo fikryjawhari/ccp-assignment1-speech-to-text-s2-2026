@@ -91,6 +91,9 @@ The process cannot access the file because it is being used by another process
 running process has open, so Maven cannot delete the JAR it is trying to replace. The message
 names your own JAR without saying that your own app is what holds it.
 
+(The symptom above was captured before `<finalName>` was set in `pom.xml`; the JAR is now built as
+`assignment1-speech-to-text.jar` without the version suffix. The failure is otherwise identical.)
+
 **Fix:** stop the running app (Ctrl+C in its terminal), then rebuild.
 
 **Worth knowing:** this failure does not exist on Linux, which allows deleting a file that a
@@ -157,7 +160,7 @@ babysitting. The exit code belongs to the plugin's view of events, not to the JV
 
 ```bash
 ./mvnw.cmd clean package -DskipTests
-java -jar target/assignment1-speech-to-text-0.0.1-SNAPSHOT.jar
+java -jar target/assignment1-speech-to-text.jar
 # in another shell:
 curl.exe -s -X POST http://localhost:8080/api/v1/admin/shutdown
 ```

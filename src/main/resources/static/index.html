@@ -28,8 +28,8 @@
     <!--
       One button, not two. The control's label and action change with the state, so a single
       target means the user never has to find a different button to stop what they started.
-      Stage 8 adds the accessibility work; the element is a real <button> from the start so it is
-      keyboard-operable and screen-reader-announced for free.
+      A real <button> rather than a styled <div>, so it is keyboard-operable, focusable and
+      announced by a screen reader without any ARIA needed to say so.
     -->
     <section class="recorder">
         <button id="record-button" class="recorder__button" type="button">Start recording</button>

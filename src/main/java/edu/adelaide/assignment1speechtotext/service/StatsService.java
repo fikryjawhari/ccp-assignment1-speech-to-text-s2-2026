@@ -25,7 +25,7 @@ public class StatsService {
     /**
      * Builds a snapshot of the counters as of now. Each get() is atomic on its own, but the pair is not. A concurrent
      * update can land between them, resulting in an inconsistent snapshot. At worst the pair can be skewed by in-flight
-     * requests, but because each counter is monotonic and independant any skew will be corrected at the next read, and
+     * requests, but because each counter is monotonic and independent any skew will be corrected at the next read, and
      * because TITAN does an initial and final check when there is no request happening, the total counters being
      * correct is enough. Contrasting this to the UptimeResponse, which had a third field defined as the difference
      * between the other two fields, both fields had to be derived from the same Instant because for that class the skew

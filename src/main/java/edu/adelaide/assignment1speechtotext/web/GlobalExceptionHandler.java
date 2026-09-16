@@ -18,9 +18,10 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  *
  * <p>This class is the one place that decides what a failing request tells the caller, which is
  * why it is also the enforcement point for the rule that the OpenAI API key must never leave the
- * process. Upstream failures in later stages can carry request detail -- including the
- * Authorization header -- in their exception messages, so the detail is logged and a fixed,
- * generic message is returned.
+ * process. An upstream failure can carry request detail -- including the Authorization header --
+ * in its exception message, so the detail is logged server-side and a fixed, generic message is
+ * returned to the caller. {@code TranscriptionControllerTest.errorResponsesLeakNothingSensitive}
+ * asserts that no error body contains a key prefix, an Authorization echo, or a stack trace.
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
