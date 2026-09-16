@@ -158,7 +158,7 @@ public class OpenAiTranscriptionClient implements TranscriptionClient {
             String responseText = response.text();
 
             // usage is absent. The chosen model is token-billed and always reports it (see
-            // application-titan.yaml), so this means something changed upstream
+            // the model comment in application.yaml), so this means something changed upstream
             // hence warn, not info: the tokens were spent but cannot be counted,
             // so /api/v1/global/stats under-reports.
             if (response.usage() == null) {

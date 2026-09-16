@@ -8,7 +8,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * <p>A {@code @ConfigurationProperties} record is Spring's typed view of external configuration.
  * At startup Spring finds every property under the {@code openai} prefix -- from
- * {@code application-titan.yaml}, from environment variables, from command-line arguments -- and
+ * {@code application.yaml}, from environment variables, from command-line arguments -- and
  * calls this record's constructor with the values. The rest of the application then injects
  * {@code OpenAiProperties} and reads typed fields, rather than scattering {@code @Value("${...}")}
  * lookups that fail at runtime if a key is misspelled. The Python parallel is parsing environment
